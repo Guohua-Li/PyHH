@@ -1,25 +1,36 @@
+import matplotlib.pyplot as pl
 from math import exp
 import copy
 import array
 import time
 import sys
 
+def arange(a,b,step):
+  N = int((b-a)/step)
+  return [a+i*step for i in range(N)]
+
+
 def Fm(V): # Func for Na channel
-  if V != -35.0: am = 0.1 * (V + 35.0) /(1-exp(-(V + 35.0)/10.0))
-  else:          am = 1.0
-  bm = 4 * exp(-(V+60)/18)
-  return am, bm
+  if V != -35.0: alpha = 0.1 * (V + 35.0) /(1-exp(-(V + 35.0)/10.0))
+  else:          alpha = 1.0
+  beta = 4 * exp(-(V+60)/18)
+  tau = 1./(alpha + beta)
+  return tau, alpha * tau
 
 def Fh(V): # Func for Na channel
-  ah = 0.07 * exp(-0.05*(V+60.0))
-  bh = 1 / (1+exp(-0.1*(V+30.0)))
-  return ah, bh
+  alpha = 0.07 * exp(-0.05*(V+60.0))
+  beta  = 1. / (1+exp(-0.1*(V+30.0)))
+  tau = 1. / (alpha + beta)
+  return tau, alpha * tau
 
 def Fn(V): # Func for K channel
-  if V != -50.0: an = 0.01 * (V + 50.0) / (1-exp(-(V + 50.0)/10))
-  else:          an = 0.1
-  bn = 0.125 * exp(-0.0125*(V+60))
-  return an, bn
+  if V != -50.0: alpha = 0.01 * (V + 50.0) / (1-exp(-(V + 50.0)/10))
+  else:          alpha = 0.1
+  beta = 0.125 * exp(-0.0125*(V+60))
+  tau = 1./(alpha + beta)
+  return tau, alpha * tau
+
+
 
 
 COUNT = 0
@@ -41,8 +52,8 @@ class Alpha: # alpha function for current injection
 
   def _func(self, t):
     t = t - self.Delay
-    if   t < 0:          return 0.0
-    else:                return 2.7183*self.Amplitude/self.Tau * t *exp(-t/self.Tau)
+    if   t < 0: return 0.0
+    else:       return 2.7183*self.Amplitude/self.Tau * t *exp(-t/self.Tau)
 
 class Rect: # Rectangular function for current, voltage and concentration clampers
 
@@ -58,9 +69,28 @@ class Rect: # Rectangular function for current, voltage and concentration clampe
     elif t < self.Width: return self.Amplitude
     else:                return 0.0
 
+class Train:
+  """ a train of Rectangular pulses"""
+  def __init__(self, delay = 1, width = 0.4, interval = 1.5, amplitude = 0.5, number = 5):
+    self.Delay = delay
+    self.Amplitude = amplitude
+    self.Width = width
+    self.interval = interval
+    self.Number = number
 
-class CClamper: # Concentration Clamper
+  def _func(self, t):
+    t = t - self.Delay
+    P = (self.Width+self.interval)
+    n = t // P
+    if n >= self.Number: return 0.0
+    if t < 0: return 0.0
+    t = t % P
+    if t < self.Width: return self.Amplitude
+    else: return 0.0
 
+
+class CClamper:
+  """Concentration Clamper"""
   def __init__(self, ligand):
     self.Command  = None
     self.Waveform = None
@@ -74,7 +104,6 @@ class CClamper: # Concentration Clamper
     else:
       cmpt.lClamp = self
 
-
   def set_amplitude(self, val):
     self.Waveorm.Amplitude = val
 
@@ -83,8 +112,8 @@ class CClamper: # Concentration Clamper
 
 
 
-class IClamper: # Current Clamper
-
+class IClamper:
+  """Current Clamper"""
   def __init__(self):
     self.Command  = None
     self.Waveform = None
@@ -104,8 +133,8 @@ class IClamper: # Current Clamper
     self.Waveorm.Width = val
 
 
-class VClamper: #Voltage clamper
-
+class VClamper:
+  """Voltage clamper"""
   def __init__(self):
     self.Command  = None
     self.Waveform = None
@@ -140,6 +169,8 @@ class VClamper: #Voltage clamper
       f.write(s)
     f.close()
 
+"""
+class alphaConductance:"""
 
 class LeakChannel:
   """Leak conductance"""
@@ -149,16 +180,17 @@ class LeakChannel:
     self.Tag = 'Leak'
 
   def _gating(self): return 1.0
-  def _update(self, V, h): return
+  def _update_gate(self, V, dt): return
+  def _update_gMax(self,dt): return
   def store_gates(self, mem=0): return
   def load_gates(self, mem=0): return
-  def _update_gMax(self,h): return
+  def show(self): pass
 
 
 class KChannel:
   """Classical potassium channel"""
-  def __init__(self, gMax=0.18, ER=-90, func=Fn):
-    self._Func = func
+  def __init__(self, f=Fn, gMax=0.18, ER=-90):
+    self._Func = f
     self.n0 = 0.299
     self.n  = self.n0
     self.gMax = gMax
@@ -171,11 +203,9 @@ class KChannel:
   def _gating(self):
     return self.n**4
 
-  def _update(self, V, h):
-    alpha, beta = self._Func(V)
-    k = alpha + beta
-    nf = alpha / k
-    self.n = exp(-h*k) * (self.n-nf) + nf
+  def _update_gate(self, V, dt):
+    k, f = self._Func(V)
+    self.n = exp(-dt/k) * (self.n-f) + f
 
   def _update_gMax(self, dt):
     gf = self.Fg * self.n**4
@@ -187,18 +217,34 @@ class KChannel:
   def load_gates(self, mem = 0):
     self.n = self.n0
 
+  def show(self):
+    print(self.Tag)
+    print('n =  %4.3f'% (self.n))
+
+  def plot(self):
+    V = arange(-90, 50, 0.5)
+    N = len(V)
+    tau = [0.0] * N
+    inf = [0.0] * N
+    for v in V:
+      tau[i], inf[i] = self._Func(v)
+    fig = pl.figure()
+    ax1 = fig.add_subplot(121)
+    ax1.plot(V, tau)
+    ax2 = fig.add_subplot(122)
+    ax2.plot(V, inf)
+    #xlabel('mV')
+
+
 class NaChannel:
   """Classical sodium channel"""
-
-  def __init__(self, gMax=0.6, ER=50, fm=Fm, fh=Fh):
+  def __init__(self, fm, fh, gMax, ER):
     self._Func1 = fm
     self._Func2 = fh
     self.m  = 0.046
     self.h  = 0.638
     self.m0 = 0.046
     self.h0 = 0.638
-    self.m1 = 0.046
-    self.h1 = 0.638
     self.gMax = gMax
     self.Fg   = gMax
     self.ER   = ER
@@ -209,89 +255,20 @@ class NaChannel:
   def _gating(self):
     return (self.m**3) * self.h
 
-  def _update(self, V, dt):
-    am, bm = self._Func1(V)
-    ah, bh = self._Func2(V)
-    km = am + bm
-    fm = am / km
-    kh = ah + bh
-    fh = ah / kh
-    self.m = exp(-dt*km) * (self.m-fm) + fm
-    self.h = exp(-dt*kh) * (self.h-fh) + fh
+  def _update_gate(self, V, dt):
+    km, fm = self._Func1(V)
+    kh, fh = self._Func2(V)
+    self.m = exp(-dt/km) * (self.m-fm) + fm
+    self.h = exp(-dt/kh) * (self.h-fh) + fh
+
+  def show(self):
+    print(self.Tag)
+    print('m =  %4.3f' % (self.m))
+    print('h =  %4.3f' % (self.h))
 
   def _update_gMax(self, dt):
     gf = self.Fg * self.m**3 * self.h
     self.gMax = exp(-dt*self.Rg) * (self.gMax-gf) + gf
-
-  def store_gates(self, mem = 0):
-    if mem == 0: self.m0, self.h0 = self.m, self.h
-    else: self.m1, self.h1 = self.m, self.h
-
-  def load_gates(self, mem = 0):
-    if mem == 0: self.m, self.h = self.m0, self.h0
-    else: self.m, self.h = self.m1, self.h1
-
-
-
-class HH1V:
-
-  def __init__(self, func, N):
-    self._Func = func
-    self.N = N
-    self.n0 = 0.299
-    self.n = self.n0
-    self.Tag = 'HH1V'
-    self.gMax = 0.18
-    self.ER = -90
-
-  def _gating(self):
-    return self.n**self.N
-
-  def _update(self, V, dt):
-    alpha, beta = self._Func(V)
-    tau = 1.0/(alpha+beta)
-    ff = alpha * tau
-    self.n = exp(-dt/tau) * (self.n-ff) + ff
-
-  def store_gates(self, mem=0):
-    self.n0 = self.n
-
-  def load_gates(self, mem = 0):
-    self.n = self.n0
-
-
-class HH2V:
-  is_Channel = 1
-  is_HHChannel = 1
-  is_HHV = 1
-
-  def __init__(self, fm, Nm, fh, Nh):
-    self._Func1 = fm
-    self._Func2 = fh
-    self.Nm = Nm
-    self.Nh = Nh
-    self.m  = 0.046
-    self.h  = 0.638
-    self.m0 = 0.046
-    self.h0 = 0.638
-    self.m1 = 0.046
-    self.h1 = 0.638
-    self.gMax = 0.6 # ???
-    self.ER = 50    # ???
-    self.Tag = 'HH2V'
-
-  def _gating(self):
-    return (self.m**self.Nm) * (self.h**self.Nh)
-
-  def _update(self, V, h):
-    am, bm = self._Func1(V)
-    ah, bh = self._Func2(V)
-    tm = 1.0/(am+bm)
-    fm = am * tm
-    th = 1.0/(ah+bh)
-    fh = ah * th
-    self.m = exp(-h/tm) * (self.m-fm) + fm
-    self.h = exp(-h/th) * (self.h-fh) + fh
 
   def store_gates(self, mem = 0):
     if mem == 0: self.m0, self.h0 = self.m, self.h
@@ -411,6 +388,13 @@ class Compartment:
       f.write('%8.6f\n' %(self.Vm[k]))
     f.close()
 
+  def set_V(self, val):
+    self.V0    = val
+    self.Vi    = val
+
+  def show(self):
+    print ('Vm =%f' % (self.Vi))
+
 
 class Experiment:
 
@@ -420,13 +404,7 @@ class Experiment:
     else:
       self.cmptList = [prep]
 
-    aNumb = []
-    for cp in self.cmptList:
-      if cp.ID in aNumb:
-        print ('\nWarning: Compartments share same ID = %i.\n'%(cp.ID))
-      else:
-        aNumb.append(cp.ID)
-
+    self.TotalTime = 0.0
     for cp in self.cmptList:
       cp.Vi = cp.V0
       cp._calc_surface()
@@ -448,8 +426,16 @@ class Experiment:
         f.write('%8.6f\n' %(cp.Vm[k]))
     f.close()
 
+  def endpoint_info(self):
+    for cp in self.cmptList:
+      cp.show()
+      for ch in cp.channel_list: ch.show()
+
   def run(self, t, dt):
-    steps = self.nStep = int(t/dt)
+    steps = int(t/dt)
+    self.T = [i*dt+self.TotalTime for i in range(steps)]
+    self.TotalTime += t
+
     print ("Integration in process")
     print ('Number of steps: %i'% (steps))
     if dt < 0.001:
@@ -480,7 +466,15 @@ class Experiment:
 
     self.N_Compartments = self.I_Compartments + self.L_Compartments + self.F_Compartments
 
-    self.T = [i*dt for i in range(steps)]
+    for cp in self.cmptList: # check for missing values
+      for ch in cp.channel_list:
+        if ch.gMax == None:
+          print ('Ion channel %s in Compartment %i doen not have gMax value')
+          sys.exit(1)
+        if ch.ER == None:
+          print ('Ion channel %s in Compartment %i doen not have ER value')
+          sys.exit(1)
+
     for cp in self.cmptList: # prepare the storages based on run parameters
       cp.Vm = array.array('f',[cp.V0]) * steps
       for ch in cp.channel_list:
@@ -493,13 +487,13 @@ class Experiment:
         cp.vClamp.Jc = array.array('f',[0]) * steps
         cp.vClamp.Jp = array.array('f',[0]) * steps
 
-    for cp in self.cmptList: # generate Ja pulse
+    for cp in self.cmptList: # generate command from specified waveform
       ic = cp.iClamp
       if ic:
         ic.Command = array.array('f',[0]) * steps
         if ic.Waveform != None:
           for i in range(steps):
-            ic.Command[i] = ic.Waveform._func(i*dt) # why +=
+            ic.Command[i] = ic.Waveform._func(self.T[i])
 
       lc = cp.lClamp
       if lc:
@@ -544,14 +538,14 @@ class Experiment:
         cp.Vi = cp._update_Vm(dt)
 
         for ch in cp.channel_list:
-          ch._update(cp.Vi,dt)
+          ch._update_gate(cp.Vi,dt)
           #ch._update_gMax(dt)
 
       for cp in self.V_Compartments: # Voltage-Clamp block
         vClmp = cp.vClamp
         cp.Vi = vClmp.Command[step_num] # ???
         for ch in cp.channel_list:
-          ch._update(cp.Vi,dt)
+          ch._update_gate(cp.Vi,dt)
 
         vClmp.Jc[step_num] = cp.Cm * vClmp.dot[step_num]
         vClmp.Jm[step_num] = cp.get_Jion(vClmp.Command[step_num])
@@ -569,9 +563,6 @@ class Experiment:
     ##########################
 
 
-gL = LeakChannel()
-NaC = NaChannel()
-KDR = KChannel()
 
 class Ligand:
   """
@@ -636,7 +627,12 @@ class LGIC:
     for k in range(N):
       if States[k][0] == 'O': self.OpenIndex.append(k)
 
-  def _update(self, V, h):
+  def _gating(self):
+    gate = 0.0
+    for k in self.OpenIndex: gate += self.StateProb[k]
+    return gate
+
+  def _update_gate(self, V, h):
     N = self.N
     rate = [[j for j in row] for row in self.RateMatrix] # copy self.RateMatrix
     for lg, paths in self.GateDict.items():
@@ -662,10 +658,455 @@ class LGIC:
     if S != 0:
       self.StateProb = [x/S for x in self.StateProb]
 
-  def _gating(self):
-    gate = 0.0
-    for k in self.OpenIndex: gate += self.StateProb[k]
-    return gate
 
+
+class NaChannel_MHMJ:
+  """MHMJ sodium channel"""
+  def __init__(self, fm, fh, fi, gMax, ER):
+    self._Func1 = fm
+    self._Func2 = fh
+    self._Func3 = fi
+    self.m  = 0.046
+    self.h  = 0.638
+    self.i  = 0.638
+    self.m0 = 0.046
+    self.h0 = 0.638
+    self.i0 = 0.638
+    self.gMax = gMax
+    self.Fg   = gMax
+    self.ER   = ER
+    self.Rg   = 0.01
+    self.gM   = None
+    self.Tag  = 'MHMJ'
+
+  def _gating(self):
+    return (self.m**3) * self.h * self.i
+
+  def _update_gate(self, V, dt):
+    km, fm = self._Func1(V)
+    kh, fh = self._Func2(V)
+    ki, fi = self._Func3(V)
+    self.m = exp(-dt/km) * (self.m-fm) + fm
+    self.h = exp(-dt/kh) * (self.h-fh) + fh
+    self.i = exp(-dt/ki) * (self.i-fi) + fi
+
+  def _update_gMax(self, dt):
+    gf = self.Fg * self.m**3 * self.h * self.i
+    self.gMax = exp(-dt*self.Rg) * (self.gMax-gf) + gf
+
+  def set_m(self, m):
+    self.m = m
+  def set_h(self, h):
+    self.h = h
+  def set_i(self, i):
+    self.i = i
+
+  def show(self):
+    print(self.Tag)
+    print('m', self.m)
+    print('h', self.h)
+    print('i', self.i)
+
+  def plot(self):
+    V = arange(-90, 50, 0.5)
+    N = len(V)
+    tau_a, inf_a = [0.0] * N, [0.0] * N
+    tau_b, inf_b = [0.0] * N, [0.0] * N
+    tau_i, inf_i = [0.0] * N, [0.0] * N
+    for i in range(N):
+      tau_a[i], inf_a[i] = self._Func1(V[i])
+      tau_b[i], inf_b[i] = self._Func2(V[i])
+      tau_i[i], inf_i[i] = self._Func3(V[i])
+
+    fig = pl.figure()
+    ax1 = fig.add_subplot(321)
+    ax1.plot(V, inf_a)
+    ax2 = fig.add_subplot(322)
+    ax2.plot(V, tau_a)
+    ax3 = fig.add_subplot(323)
+    ax3.plot(V, inf_b)
+    ax4 = fig.add_subplot(324)
+    ax4.plot(V, tau_b)
+    ax5 = fig.add_subplot(325)
+    ax5.plot(V, inf_i)
+    ax6 = fig.add_subplot(326)
+    ax6.plot(V, tau_i)
+    ax1.set_xlim([-90,50])
+    ax2.set_xlim([-90,50])
+    ax3.set_xlim([-90,50])
+    ax4.set_xlim([-90,50])
+    ax5.set_xlim([-90,50])
+    ax6.set_xlim([-90,50])
+    ax5.set_xlabel('mV')
+    ax6.set_xlabel('mV')
+    ax1.set_ylabel('inf')
+    ax3.set_ylabel('inf')
+    ax5.set_ylabel('inf')
+    ax2.set_ylabel('tau')
+    ax4.set_ylabel('tau')
+    ax6.set_ylabel('tau')
+
+
+class HH_aAbB:
+  """Ion channels with (a**N) * (b**M) gating"""
+  def __init__(self, fa, Na, fb, Nb, gMax, ER):
+    self._Func1 = fa
+    self._Func2 = fb
+    self.Na = Na
+    self.Nb = Nb
+    self.a  = 0.046
+    self.b  = 0.638
+    self.a0 = 0.046
+    self.b0 = 0.638
+    self.gMax = gMax
+    self.ER = ER
+    self.Tag = 'NaYb'
+
+  def _gating(self):
+    return (self.a**self.Na) * (self.b**self.Nb)
+
+  def _update_gate(self, V, dt):
+    ka, fa = self._Func1(V)
+    kb, fb = self._Func2(V)
+    self.a = exp(-dt/ka) * (self.a-fa) + fa
+    self.b = exp(-dt/kb) * (self.b-fb) + fb
+
+  def show(self):
+    print(self.Tag)
+    print('a', self.a)
+    print('b', self.b)
+
+  def plot(self):
+    V = arange(-90, 50, 0.5)
+    N = len(V)
+    tau_a = [0.0] * N
+    inf_a = [0.0] * N
+    tau_b = [0.0] * N
+    inf_b = [0.0] * N
+    for i in range(N):
+      tau_a[i], inf_a[i] = self._Func1(V[i])
+      tau_b[i], inf_b[i] = self._Func2(V[i])
+
+    fig = pl.figure()
+    ax1 = fig.add_subplot(211)
+    ax1.plot(V, tau_a)
+    ax1.plot(V, tau_b)
+    ax2 = fig.add_subplot(212)
+    ax2.plot(V, inf_a)
+    ax2.plot(V, inf_b)
+    #xlabel('mV')
+
+class HH_aA:
+  """Ion channels with a**N gating"""
+  def __init__(self, f, A, gMax, ER):
+    self._Func = f
+    self.N = A
+    self.a0 = 0.299
+    self.a = self.a0
+    self.gMax = gMax
+    self.ER = ER
+    self.Tag = 'Na0b'
+
+  def _gating(self):
+    return self.a**self.N
+
+  def _update_gate(self, V, dt):
+    k, f = self._Func(V)
+    self.a = exp(-dt/k) * (self.a-f) + f
+
+  def show(self):
+    print(self.Tag)
+    print('a', self.a)
+
+  def plot(self):
+    V = arange(-90, 50, 0.5)
+    N = len(V)
+    tau_a = [0.0] * N
+    inf_a = [0.0] * N
+    for i in range(N):
+      tau_a[i], inf_a[i] = self._Func1(V[i])
+
+    fig = pl.figure()
+    ax1 = fig.add_subplot(211)
+    ax1.plot(V, tau_a)
+    ax2 = fig.add_subplot(212)
+    ax2.plot(V, inf_a)
+    #xlabel('mV')
+
+class HH_aAb:
+  """Ion channels with (a**A) * b gating"""
+  def __init__(self, fa, A, fb, gMax, ER):
+    self._Func1 = fa
+    self._Func2 = fb
+    self.Na = A
+    self.a  = 0.046
+    self.b  = 0.638
+    self.a0 = 0.046
+    self.b0 = 0.638
+    self.gMax = gMax
+    self.ER = ER
+    self.Tag = 'NaYb'
+
+  def _gating(self):
+    return (self.a**self.Na) * self.b
+
+  def _update_gate(self, V, dt):
+    ka, fa = self._Func1(V)
+    kb, fb = self._Func2(V)
+    self.a = exp(-dt/ka) * (self.a-fa) + fa
+    self.b = exp(-dt/kb) * (self.b-fb) + fb
+
+  def show(self):
+    print(self.Tag)
+    print('a', self.a)
+    print('b', self.b)
+
+  def plot(self):
+    V = arange(-90, 50, 0.5)
+    N = len(V)
+    tau_a = [0.0] * N
+    inf_a = [0.0] * N
+    tau_b = [0.0] * N
+    inf_b = [0.0] * N
+    for i in range(N):
+      tau_a[i], inf_a[i] = self._Func1(V[i])
+      tau_b[i], inf_b[i] = self._Func2(V[i])
+
+    fig = pl.figure()
+    ax1 = fig.add_subplot(211)
+    ax1.plot(V, tau_a)
+    ax1.plot(V, tau_b)
+    ax2 = fig.add_subplot(212)
+    ax2.plot(V, inf_a)
+    ax2.plot(V, inf_b)
+    #xlabel('mV')
+
+class HH_a:
+  """Ion channels with one gate type"""
+  def __init__(self, f, gMax, ER):
+    self._Func = f
+    self.a  = 0.046
+    self.a0 = 0.046
+    self.gMax = gMax
+    self.ER = ER
+    self.Tag = '1a0b'
+
+  def _gating(self):
+    return self.a
+
+  def _update_gate(self, V, dt):
+    ka, fa = self._Func(V)
+    self.a = exp(-dt/ka) * (self.a-fa) + fa
+
+  def set_a(self,a):
+    self.a = a
+
+  def show(self):
+    print(self.Tag)
+    print('a', self.a)
+
+  def plot(self):
+    V = arange(-90, 50, 0.5)
+    N = len(V)
+    tau = [0.0] * N
+    inf = [0.0] * N
+    for i in range(N):
+      tau[i], inf[i] = self._Func(V[i])
+    fig = pl.figure()
+    ax1 = fig.add_subplot(211)
+    ax1.plot(V, tau)
+    ax2 = fig.add_subplot(212)
+    ax2.plot(V, inf)
+    #xlabel('mV')
+
+class HH_ab:
+  """Ion channels with a gating"""
+  def __init__(self, fa, fb, gMax, ER):
+    self._Func1 = fa
+    self._Func2= fb
+    self.a  = 0.046
+    self.a0 = 0.046
+    self.b  = 0.046
+    self.b0 = 0.046
+    self.gMax = gMax
+    self.ER = ER
+    self.Tag = '1a0b'
+
+  def _gating(self):
+    return self.a * self.b
+
+  def _update_gate(self, V, dt):
+    ka, fa = self._Func1(V)
+    kb, fb = self._Func2(V)
+    self.a = exp(-dt/ka) * (self.a-fa) + fa
+    self.b = exp(-dt/kb) * (self.b-fb) + fb
+
+  def set_a(self,a):
+    self.a = a
+
+  def set_b(self,b):
+    self.b = b
+
+  def show(self):
+    print(self.Tag)
+    print('a', self.a)
+    print('b', self.b)
+
+  def plot(self):
+    V = arange(-90, 50, 0.5)
+    N = len(V)
+    tau_a = [0.0] * N
+    inf_a = [0.0] * N
+    tau_b = [0.0] * N
+    inf_b = [0.0] * N
+    for i in range(N):
+      tau_a[i], inf_a[i] = self._Func1(V[i])
+      tau_b[i], inf_b[i] = self._Func2(V[i])
+
+    fig = pl.figure()
+    ax1 = fig.add_subplot(211)
+    ax1.plot(V, tau_a)
+    ax1.plot(V, tau_b)
+    ax2 = fig.add_subplot(212)
+    ax2.plot(V, inf_a)
+    ax2.plot(V, inf_b)
+    #xlabel('mV')
+
+class HH_abc:
+  """MHMJ sodium channel"""
+  def __init__(self, fa, fb, fc, gMax, ER):
+    self._Func1 = fa
+    self._Func2 = fb
+    self._Func3 = fc
+    self.m  = 0.046
+    self.h  = 0.638
+    self.i  = 0.638
+    self.m0 = 0.046
+    self.h0 = 0.638
+    self.i0 = 0.638
+    self.gMax = gMax
+    self.Fg   = gMax
+    self.ER   = ER
+    self.Rg   = 0.01
+    self.gM   = None
+    self.Tag  = 'MHMJ'
+
+  def _gating(self):
+    return self.m * self.h * self.i
+
+  def _update_gate(self, V, dt):
+    km, fm = self._Func1(V)
+    kh, fh = self._Func2(V)
+    ki, fi = self._Func3(V)
+    self.m = exp(-dt/km) * (self.m-fm) + fm
+    self.h = exp(-dt/kh) * (self.h-fh) + fh
+    self.i = exp(-dt/ki) * (self.i-fi) + fi
+
+  def _update_gMax(self, dt):
+    gf = self.Fg * self.m**3 * self.h * self.i
+    self.gMax = exp(-dt*self.Rg) * (self.gMax-gf) + gf
+
+  def set_m(self, m):
+    self.m = m
+
+  def set_h(self, h):
+    self.h = h
+
+  def set_i(self, i):
+    self.i = i
+
+  def show(self):
+    print(self.Tag)
+    print('m', self.m)
+    print('h', self.h)
+    print('i', self.i)
+
+  def plot(self):
+    V = arange(-90, 50, 0.5)
+    N = len(V)
+    tau_a, inf_a = [0.0] * N, [0.0] * N
+    tau_b, inf_b = [0.0] * N, [0.0] * N
+    tau_i, inf_i = [0.0] * N, [0.0] * N
+    for i in range(N):
+      tau_a[i], inf_a[i] = self._Func1(V[i])
+      tau_b[i], inf_b[i] = self._Func2(V[i])
+      tau_i[i], inf_i[i] = self._Func3(V[i])
+
+    fig = pl.figure()
+    ax1 = fig.add_subplot(321)
+    ax1.plot(V, tau_a)
+    ax2 = fig.add_subplot(322)
+    ax2.plot(V, inf_a)
+    ax3 = fig.add_subplot(323)
+    ax3.plot(V, tau_b)
+    ax4 = fig.add_subplot(324)
+    ax4.plot(V, inf_b)
+    ax5 = fig.add_subplot(325)
+    ax5.plot(V, tau_i)
+    ax6 = fig.add_subplot(326)
+    ax6.plot(V, inf_i)
+    #xlabel('mV')
+
+
+
+
+GABA = Ligand()
+Glu = Ligand()
+
+gabar_transit = {
+                 'C0': {'C1': 20.0},
+                 'C1': {'C0': 4.6, 'O1': 3.3, 'C2': 10.0},
+                 'C2': {'C1': 9.2, 'O2': 10.6},
+                 'O1': {'C1': 9.8},
+                 'O2': {'C2': 0.41}
+                }
+
+gabar_binding = {
+                 GABA:
+                 {
+                   'C0': 'C1',
+                   'C1': 'C2'
+                 }
+                }
+
+
+nmdar_transit = {
+                 'C0': {'C1': 5.0},
+                 'C1': {'C0': 0.0129, 'C2': 5.0},
+                 'C2': {'C1': 0.0129, 'D': 0.0084, 'O': 0.0465},
+                 'D':  {'C2': 0.0068},
+                 'O':  {'C2': 0.0738}
+                }
+
+nmdar_binding = {Glu:
+                 {'C0': 'C1',
+                  'C1': 'C2'}
+                }
+
+
+# gate_a = (Fa, A), (Fm,3), (Fn,4)
+# gate_b = (Fb, B)
+# gate_c = (Fc, C), (None,0)
+
+def HHChannel(gate_a, gate_b, gate_c, gMax=None, ER=None):
+  Fa, A = gate_a[0], gate_a[1]
+  Fb, B = gate_b[0], gate_b[1]
+  Fc, B = gate_c[0], gate_c[1]
+  if C == 0 and B == 0 and A == 1: return HH_a(Fa, gMax, ER) #
+  if C == 0 and B == 0 and A >  1: return HH_aA(Fa, A, gMax, ER)#
+  if C == 0 and B == 1 and A == 1: return HH_ab(Fa, Fb, gMax, ER)#
+  if C == 0 and B == 1 and A >  1: return HH_aAb(Fa, A, Fb, gMax, ER)
+  if C == 0 and B >  1 and A >  1: return HH_aAbB(Fa, A, Fb, B, gMax, ER)
+  if C == 1 and B == 1 and A == 1: return HH_abc(Fa, Fb, Fc, gMax, ER)
+"""
+  if C == 1 and B == 1 and A >  1: return HH_aAbc(Fa,Fb)
+  if C == 1 and B  > 1 and A >  1: return HH_aAbBc(Fa,Fb)
+  if C >  1 and B  > 1 and A >  1: return HH_aAbBcC(Fa,Fb)"""
+
+
+
+NaC = NaChannel(Fm, Fh, gMax=0.6, ER=50)    # the unit for gMax is ?S/um2
+KDR = KChannel(Fn, gMax=0.18, ER=-90)
+gL  = LeakChannel(gMax=0.03,ER=-60)
 
 
