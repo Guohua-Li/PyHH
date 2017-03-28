@@ -1,4 +1,4 @@
-from PyHH import *
+from pyhh import *
 import pylab as plt
 
 soma = Compartment(50,length=50)
