@@ -1,4 +1,4 @@
-from PyHH import *
+from pyhh import *
 
 cpm = Compartment(diameter = 1.5, length = 100)
 cpm.add_channels([NaC, KDR, gL])
