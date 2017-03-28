@@ -24,7 +24,6 @@ AMPAR = LGIC(ampar_transit, ampar_binding, gMax = 0.05, ER = 0)
 
 cpm = Compartment(diameter = 1.5, length = 100)
 ampar = cpm.add_channel(AMPAR)
-cpm.add_channel(gL)
 
 vclp = VClamper()
 vclp.Waveform = Rect(delay=0, width=150, amplitude=0)
