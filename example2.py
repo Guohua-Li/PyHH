@@ -1,4 +1,4 @@
-from PyHH import *
+from pyhh import *
 import pylab as plt
 
 cpm = Compartment(1.5, 100)
