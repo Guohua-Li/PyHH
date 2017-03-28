@@ -1,4 +1,4 @@
-from PyHH import *
+from pyhh import *
 import pylab as plt
 
 N = 50
