@@ -45,6 +45,9 @@ def arange(a,b,step):
   N = int((b-a)/step)
   return [a+i*step for i in range(N)]
 
+def isCompartment(x):
+  return hasattr(x,'is_Compartment')
+
 
 def Fm(V): # Na channel, m gate
   v = V + 35
@@ -437,6 +440,7 @@ class Compartment:
   """
   Compartment on which neurons are built.
   """
+  is_Compartment = 1
   def __init__(self, diameter = 20, length = 50):
     self.V0    = -61.237
     self.Vi    = self.V0
@@ -576,9 +580,24 @@ class Experiment:
   """
   def __init__(self, prep):
     if type(prep) is list:
+      self.UNITS = []
+      for a in prep:
+        if isCompartment(a):
+          self.UNITS
+        else:
+          print ("-------------------------------------")
+          print ("| Check the input to the experiment |")
+          print ("-------------------------------------")
+          raise Exception("Input error")
       self.UNITS = prep
     else:
-      self.UNITS = [prep]
+      if isCompartment(prep):
+        self.UNITS = [prep]
+      else:
+        print ("-------------------------------------")
+        print ("| Check the input to the experiment |")
+        print ("-------------------------------------")
+        raise Exception("Input error")
 
     self.Clock = 0.0
     for cp in self.UNITS:
@@ -623,7 +642,7 @@ class Experiment:
     for cp in self.UNITS: # check for missing values
       for ch in cp.channel_list:
         if ch.Tag == 'LGIC':
-          self.C_Clampers.append(ch.Ligand.Clamper)
+          if ch.Ligand.Clamper: self.C_Clampers.append(ch.Ligand.Clamper)
 
     ### prepare to run
     self.VC_UNITS = [i for i in self.UNITS if i.vClamper]
