@@ -211,9 +211,11 @@ class CClamper:
     self.Command  = None
     self.Waveform = None
     self.Ligand   = ligand
+    ligand.Clamper  = self    # added after v1.0
+    #self.Ligand.Clamper = self
     self.Tag      = 'Ligand'
 
-  def connect(self, cmpt):
+  """def connect(self, cmpt):
     if type(cmpt) is list:
       for cp in cmpt:
         if cp.cClamper:
@@ -222,7 +224,7 @@ class CClamper:
     else:
       if cmpt.cClamper:
         raise Exception('The compartment already has a CClamper')
-      cmpt.cClamper = self
+      cmpt.cClamper = self"""
 
   def set_amplitude(self, val):
     self.Waveorm.Amplitude = val
@@ -291,6 +293,10 @@ class VClamper:
 
   def set_width(self, val):
     self.Waveorm.Width = val
+
+  def calc_Jp(self):
+    Jp = [i+j+k for i,j,k in zip(self.Jm, self.Jc, self.Jn)]
+    return Jp
 
   def save(self, filename):
     N = len(self.Jm)
@@ -480,10 +486,10 @@ class Compartment:
     self.vClamper = clamper
     return clamper
 
-  def add_cclamper(self, lig):
+  """def add_cclamper(self, lig):
     clamper = CClamper(lig)
     self.cClamper = clamper
-    return clamper
+    return clamper"""
 
   def add_imonitor(self):
     monitor = IMonitor()
@@ -613,6 +619,11 @@ class Experiment:
     print ('...')
 
     self.C_Clampers = [cp.cClamper for cp in self.UNITS if cp.cClamper]
+    self.C_Clampers = []
+    for cp in self.UNITS: # check for missing values
+      for ch in cp.channel_list:
+        if ch.Tag == 'LGIC':
+          self.C_Clampers.append(ch.Ligand.Clamper)
 
     ### prepare to run
     self.VC_UNITS = [i for i in self.UNITS if i.vClamper]
@@ -649,10 +660,10 @@ class Experiment:
       if ic.Waveform:
         ic.Command = [ic.Waveform._func(self.T[i]) for i in range(steps)]
 
-    for cp in self.CC_UNITS: # generate command from specified waveform
-      cc = cp.cClamper
-      if cc.Waveform:
-        cc.Command = [cc.Waveform._func(i*dt) for i in range(steps)]
+    #for cp in self.CC_UNITS: # generate command from specified waveform
+    #  cc = cp.cClamper
+    for cc in self.C_Clampers: # We access the clamper through Experiment
+      cc.Command = [cc.Waveform._func(i*dt) for i in range(steps)]
 
     for cp in self.VC_UNITS: # generate command from specified waveform
       vc = cp.vClamper
@@ -728,16 +739,15 @@ class Ligand:
 
 class LGIC:
   """
-  This class defines receptor-operated channels (LGIC) according to Markov schemes.
+  This class defines LGICs according to Markov transition schemes.
   """
   def __init__(self, transit, binding, gMax, ER):
     self.transit = transit # keep it for copying the channel
     self.binding = binding # keep it for copying the channel
     self.State = 0
-    self.LigandList = binding.keys()
     self.do_parsing(transit, binding)
-    self.N = len(self.RateMatrix)    #self.N = len(self.RM)
-    self.StateProb = [0] * self.N # create and initiate state probability vector
+    self.N = len(self.RateMatrix)
+    self.StateProb = [0] * self.N    # create and initialize the state probability vector
     self.StateProb[0] = 1.0
     self.gMax = gMax
     self.ER   = ER

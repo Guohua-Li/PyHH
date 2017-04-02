@@ -30,21 +30,17 @@ cpm1 = Compartment(diameter = 1.5, length = 100)
 ampar1 = cpm1.add_channel(AMPAR)
 cpm1.add_channel(gL)
 
-vclamp0 = VClamper()
-vclamp0.Waveform = Rect(delay=0, width=150, amplitude=0)
-vclamp0.connect(cpm0)
+cpm0.add_vclamper()
+cpm0.vClamper.Waveform = Rect(delay=0, width=150, amplitude=0)
 
-vclamp1 = VClamper()
-vclamp1.Waveform = Rect(delay=0, width=150, amplitude=0)
-vclamp1.connect(cpm1)
+cpm1.add_vclamper()
+cpm1.vClamper.Waveform = Rect(delay=0, width=150, amplitude=0)
 
 deliver0 = CClamper(ampar0.Ligand)
 deliver0.Waveform = Rect(delay=2, width=10, amplitude=1)
-deliver0.connect(cpm0)
 
 deliver1 = CClamper(ampar1.Ligand)
 deliver1.Waveform = Rect(delay=3, width=10, amplitude=1)
-deliver1.connect(cpm1)
 
 xp = Experiment([cpm0,cpm1])
 
@@ -52,8 +48,8 @@ xp.run(20,0.005)
 
 plt.figure()
 plt.subplot(2,1,1)
-plt.plot(xp.T, vclamp0.Jm, linewidth=2.0)
-plt.plot(xp.T, vclamp1.Jm, linewidth=2.0)
+plt.plot(xp.T, cpm0.vClamper.Jm, linewidth=2.0)
+plt.plot(xp.T, cpm1.vClamper.Jm, linewidth=2.0)
 plt.ylim([-1,0.1])
 
 

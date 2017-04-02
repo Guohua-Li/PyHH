@@ -14,21 +14,30 @@ xp = Experiment([soma,dend])
 xp.run(t=10,dt=0.005)
 
 plt.figure()
-plt.subplot(3,1,1)
-plt.plot(xp.T, soma.vClamper.Jp, linewidth=2.0)
-plt.ylabel('Jp (pA/um2)')
-plt.ylim([-5,5])
-plt.subplot(3,1,2)
+plt.subplot(2,1,1)
 plt.plot(xp.T, soma.vClamper.Jm, linewidth=2.0)
 plt.plot(xp.T, soma.vClamper.Jn, linewidth=2.0)
 plt.plot(xp.T, soma.vClamper.Jc, linewidth=2.0)
 plt.ylabel('Jm, Jc, Jn')
 plt.ylim([-5,5])
 
-plt.subplot(3,1,3)
+plt.subplot(2,1,2)
 plt.plot(xp.T, soma.Vm, linewidth=2.0)
 plt.plot(xp.T, dend.Vm, linewidth=2.0)
 plt.xlabel('time (ms)')
 plt.ylabel('V (mV)')
 plt.show()
+
+Jp = soma.vClamper.calc_Jp()
+plt.figure()
+plt.plot(xp.T, Jp, linewidth=2.0)
+plt.plot(xp.T, soma.vClamper.Jm)
+plt.show()
+
+plt.figure()
+Jp = [i+j for i,j in zip(soma.vClamper.Jm, soma.vClamper.Jn)]
+plt.plot(xp.T, Jp, linewidth=2.0)
+plt.plot(xp.T, soma.vClamper.Jm)
+plt.show()
+
 
