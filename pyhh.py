@@ -48,6 +48,9 @@ def arange(a,b,step):
 def isCompartment(x):
   return hasattr(x,'is_Compartment')
 
+def isLGIC(x):
+  return hasattr(x,'is_LGIC')
+
 
 def Fm(V): # Na channel, m gate
   v = V + 35
@@ -157,7 +160,7 @@ def increment():
 
 class Alpha: 
   """
-  alpha function for current injection
+  alpha function for Waveform setting
   """
   def __init__(self, delay, tau, amplitude):
     self.Delay = delay
@@ -344,6 +347,9 @@ class LeakChannel:
   def store_gates(self, mem=0): return
   def load_gates(self, mem=0): return
   def show(self): pass
+  def _set_gMax(self, val): self.gMax = val
+  def _set_ER(self, val): self.gMax = val
+
 
 
 class KChannel:
@@ -361,6 +367,12 @@ class KChannel:
     self.gM   = None  # for storage of the gMax
     self.ptr = None
     self.Tag  = 'KDR'
+
+  def _set_gMax(self, val):
+    self.gMax = val
+
+  def _set_ER(self, val):
+    self.gMax = val
 
   def _ProbOpen(self):
     return self.a**4
@@ -405,6 +417,12 @@ class NaChannel:
     self.gM   = None   # for storage of the gMax
     self.Tag  = 'NaC'
     self.ptr = None
+
+  def _set_gMax(self, val):
+    self.gMax = val
+
+  def _set_ER(self, val):
+    self.gMax = val
 
   def _ProbOpen(self):
     return (self.a**3) * self.b
@@ -471,7 +489,7 @@ class Compartment:
     if type(Channel) is list:
       raise Exception('add_channel does not accept a list')
 
-    if Channel.Tag == 'LGIC':
+    if isLGIC(Channel):
       Channel.binding = copy.deepcopy(Channel.binding)
       ch = LGIC(Channel.transit,Channel.binding,Channel.gMax,Channel.ER) # python3.5
     else:
@@ -489,11 +507,6 @@ class Compartment:
     clamper = VClamper()
     self.vClamper = clamper
     return clamper
-
-  """def add_cclamper(self, lig):
-    clamper = CClamper(lig)
-    self.cClamper = clamper
-    return clamper"""
 
   def add_imonitor(self):
     monitor = IMonitor()
@@ -572,6 +585,17 @@ class Compartment:
 
   def show(self):
     print ('Vm =%f' % (self.Vi))
+
+  def plot(self,ylim=[-90,60]):
+    fig = pl.figure()
+    N = len(self.Vm)
+    if N == 0: return
+    pl.plot(self.T, self.Vm, linewidth=2.0)
+    pl.ylim(ylim)
+    pl.xlabel('time (ms)')
+    pl.ylabel('mV')
+    pl.show()
+
 
 
 class Experiment:
@@ -652,6 +676,8 @@ class Experiment:
     self.NC_UNITS = list(set(self.UNITS)-set(self.VC_UNITS))
 
     for cp in self.UNITS: # check for missing values
+      cp.dt = dt
+      cp.T = self.T
       for ch in cp.channel_list:
         if ch.gMax == None:
           raise Exception('Ion channel %s in Compartment %i doen not have gMax value.')
@@ -746,7 +772,14 @@ class Experiment:
     print ('Integration done in %f seconds.  ^-^\n' % (t1-t0))
     ##########################
 
-
+  def plot(self,ylim=[-90,60]):
+    fig = pl.figure()
+    for cp in self.UNITS:
+      pl.plot(self.T, cp.Vm, linewidth=2.0)
+    pl.ylim(ylim)
+    pl.xlabel('time (ms)')
+    pl.ylabel('mV')
+    pl.show()
 
 class Ligand:
   """
@@ -758,8 +791,9 @@ class Ligand:
 
 class LGIC:
   """
-  This class defines LGICs according to Markov transition schemes.
+  LGICs based on Markov transition schemes.
   """
+  is_LGIC = 1
   def __init__(self, transit, binding, gMax, ER):
     self.transit = transit # keep it for copying the channel
     self.binding = binding # keep it for copying the channel
@@ -773,6 +807,12 @@ class LGIC:
     self.Ligands = list(binding.keys())
     if len(self.Ligands) == 1: self.Ligand = self.Ligands[0]
     self.Tag = 'LGIC'
+
+  def _set_gMax(self, val):
+    self.gMax = val
+
+  def _set_ER(self, val):
+    self.gMax = val
 
   def do_parsing(self, transit, binding):
     States = list(transit.keys()) # 2.7 and 3.5 are different

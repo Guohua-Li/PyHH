@@ -1,17 +1,17 @@
 from pyhh import *
-import pylab as plt
-
-cpm = Compartment(1.5, 100)
+cpm = Compartment(diameter=1.5, length=100)
 cpm.add_channels([NaC, KDR, gL])
-
 cpm.add_iclamper()
-cpm.iClamper.Waveform = Rect(delay=1, width=1, amplitude=0.7)
-
+cpm.iClamper.Waveform = Rect(delay=1, width=1, amplitude=0.55)
 xp = Experiment(cpm)
-xp.run(10, 0.005)
+xp.run(t=10, dt=0.005)
+cpm.plot()
 
+"""
+# or you can make your own plot:
+import pylab as plt
 plt.figure()
-plt.plot(xp.T, cpm.Vm, linewidth=2.0)
-plt.ylim([-80,30])
+plt.plot(xp.T, cpm.Vm)
 plt.show()
 
+"""
