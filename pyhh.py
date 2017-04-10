@@ -217,20 +217,8 @@ class CClamper:
     self.Command  = None
     self.Waveform = None
     self.Ligand   = ligand
-    ligand.Clamper  = self    # added after v1.0
-    #self.Ligand.Clamper = self
+    ligand.Clamper  = self
     self.Tag      = 'Ligand'
-
-  """def connect(self, cmpt):
-    if type(cmpt) is list:
-      for cp in cmpt:
-        if cp.cClamper:
-          raise Exception('The compartment already has a CClamper')
-        cp.cClamper = self
-    else:
-      if cmpt.cClamper:
-        raise Exception('The compartment already has a CClamper')
-      cmpt.cClamper = self"""
 
   def set_amplitude(self, val):
     self.Waveorm.Amplitude = val
@@ -238,6 +226,13 @@ class CClamper:
   def set_width(self, val):
     self.Waveorm.Width = val
 
+  def plot(self):
+    fig = pl.figure()
+    pl.plot(self.T, self.Command, linewidth=2.0)
+    pl.ylim()
+    pl.xlabel('time (ms)')
+    pl.ylabel('mV')
+    pl.show()
 
 
 class IClamper:
@@ -276,7 +271,6 @@ class VClamper:
     self.Waveform = None
     self.Baseline = -60
     self.Tag      = 'Voltage'
-    self.Jc     = None # to store capacity current
     self.Jn     = None # to store cytosolic current
     self.Jm     = None # to store transmembrane current
 
@@ -301,23 +295,40 @@ class VClamper:
     self.Waveorm.Width = val
 
   def calc_Jp(self):
-    Jp = [i+j+k for i,j,k in zip(self.Jm, self.Jc, self.Jn)]
+    Jp = [i+j for i,j in zip(self.Jm, self.Jn)]
     return Jp
 
   def save(self, filename):
     N = len(self.Jm)
     f = open(filename,'w')
     for k in range(N):
-      s = '%7.5f %7.5f %7.5f\n'%(self.Jm[k],self.Jn[k],self.Jc[k])
+      s = '%7.5f %7.5f\n'%(self.Jm[k],self.Jn[k])
       f.write(s)
     f.close()
+
+  def plot(self, show_Jm=1,show_Jn=1,show_Jp=0):
+    fig = pl.figure()
+    pl.subplot(2,1,1)
+    if show_Jm==1: pl.plot(self.T, self.Jm, linewidth=3.0)
+    if show_Jn==1: pl.plot(self.T, self.Jn, linewidth=2.0)
+    if show_Jp==1:
+      Jp = self.calc_Jp()
+      pl.plot(self.T, Jp, linewidth=1.0)
+
+    pl.ylabel('Jm, Jn')
+    pl.subplot(2,1,2)
+    pl.plot(self.T, self.Command, linewidth=1.0)
+    pl.xlabel('time (ms)')
+    pl.ylim([self.Baseline-5,self.Waveform.Amplitude+self.Baseline+5])
+    pl.show()
+
+
 
 class IMonitor:
   """
   Current monitor
   """
   def __init__(self):
-    self.Jc     = None # to store capacity current
     self.Jn     = None # to store cytosolic current
     self.Jm     = None # to store transmembrane current
 
@@ -325,7 +336,7 @@ class IMonitor:
     N = len(self.Jm)
     f = open(filename,'w')
     for k in range(N):
-      s = '%7.5f %7.5f %7.5f\n'%(self.Jm[k],self.Jn[k],self.Jc[k])
+      s = '%7.5f %7.5f\n'%(self.Jm[k],self.Jn[k])
       f.write(s)
     f.close()
 
@@ -485,10 +496,15 @@ class Compartment:
       Jion += g * (V - ch.ER)
     return Jion
 
-  def add_channel(self, Channel):
-    if type(Channel) is list:
-      raise Exception('add_channel does not accept a list')
+  def add_channels(self,*channels):
+    L = []
+    for i in channels:
+      ch = self._add_channel(i)
+      L.append(ch)
+    if len(L)==1: return L[0]
+    return tuple(L)
 
+  def _add_channel(self, Channel):
     if isLGIC(Channel):
       Channel.binding = copy.deepcopy(Channel.binding)
       ch = LGIC(Channel.transit,Channel.binding,Channel.gMax,Channel.ER) # python3.5
@@ -512,13 +528,6 @@ class Compartment:
     monitor = IMonitor()
     self.iMonitor = monitor
     return monitor
-
-  def add_channels(self, Channels):
-    if type(Channels) is not list:
-      raise Exception('add_channels accept a list')
-
-    for ch in Channels:
-      self.add_channel(ch)
 
   def _calc_surface(self):
     if self.Length == None:
@@ -661,7 +670,7 @@ class Experiment:
     print ('Wait!')
     print ('...')
 
-    self.C_Clampers = [cp.cClamper for cp in self.UNITS if cp.cClamper]
+    #self.C_Clampers = [cp.cClamper for cp in self.UNITS if cp.cClamper]
     self.C_Clampers = []
     for cp in self.UNITS: # check for missing values
       for ch in cp.channel_list:
@@ -691,14 +700,13 @@ class Experiment:
         ch.gM = array.array('f',[0]) * steps
 
     for cp in self.VC_UNITS:
+      cp.vClamper.T = self.T
       cp.vClamper.Jm = array.array('f',[0]) * steps
       cp.vClamper.Jn = array.array('f',[0]) * steps
-      cp.vClamper.Jc = array.array('f',[0]) * steps
 
     for cp in self.IM_UNITS:
       cp.iMonitor.Jm = array.array('f',[0]) * steps
       cp.iMonitor.Jn = array.array('f',[0]) * steps
-      cp.iMonitor.Jc = array.array('f',[0]) * steps
 
     for cp in self.IC_UNITS: # generate command from specified waveform
       ic = cp.iClamper
@@ -708,6 +716,7 @@ class Experiment:
     #for cp in self.CC_UNITS: # generate command from specified waveform
     #  cc = cp.cClamper
     for cc in self.C_Clampers: # We access the clamper through Experiment
+      cc.T = self.T
       cc.Command = [cc.Waveform._func(i*dt) for i in range(steps)]
 
     for cp in self.VC_UNITS: # generate command from specified waveform
@@ -748,7 +757,6 @@ class Experiment:
 
       for cp in self.IM_UNITS: # Current Recording
         im = cp.iMonitor
-        im.Jc[step_num] = cp.Cm * cp.Vdot
         im.Jm[step_num] = cp.get_Jion(cp.Vi)
         im.Jn[step_num] = cp.Jn
 
@@ -758,7 +766,6 @@ class Experiment:
         for ch in cp.channel_list:
           ch._update_gate(cp.Vi,dt)
 
-        vc.Jc[step_num] = cp.Cm * vc.dot[step_num]
         vc.Jm[step_num] = cp.get_Jion(vc.Command[step_num])
         vc.Jn[step_num] = cp.Jn
 
