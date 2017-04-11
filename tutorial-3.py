@@ -1,44 +1,32 @@
 from pyhh import *
-import pylab as plt
 
-N = 50
-D = 1.5
-L = 50
 
-P1 = []
-for i in range(N):
-  P1.append(Compartment(D, L))
+N = 50   # number of compartment to be created
+D = 1.5  # diameter
+L = 50   # length
 
-#P1 = [ Compartment(diameter = 1.5, length = L) for i in range(1,N+1) ]
-
-for cpm in P1:
-  cpm.add_channels([NaC, KDR, gL])
+P = [ Compartment(D, L) for i in range(N) ]
 
 for i in range(N-1):
-  P1[i].connect(P1[i+1])
+  P[i].connect(P[i+1])
 
-xp = Experiment(P1)
+for cpm in P:
+  cpm.add_channels(NaC, KDR, gL)
 
-clp = IClamper()
-clp.Waveform = Rect(delay=1.5, width=1.5, amplitude=1.35) # try amplitude = 1.3, 1.4, 1.5
-#clp.Waveform = Alpha(delay=1, tau=0.5, amplitude=3.5)
+P[0].add_iclamper()
+P[0].iClamper.Waveform = Rect(delay=1.5, width=1., amplitude=1.65)
 
-clp.connect(P1[0])
-
+xp = Experiment(P)
 xp.run(30, 0.002)
+xp.plot()
 
-plt.figure()
-plt.subplot(2,1,1)
-for cpm in P1:
-  plt.plot(xp.T, cpm.Vm, linewidth=2.0)
-plt.ylim([-80,30])
-plt.ylabel('V (mV)')
+"""
+import matplotlib.pyplot as plt
+fig, ax1 = plt.subplots()
+for cpm in P:
+  ax1.plot(xp.T, cpm.Vm, linewidth=2.0)
 
-plt.subplot(2,1,2)
-plt.plot(xp.T, clp.Command, linewidth=2.0)
-plt.ylim([-0.2,1.5])
-plt.xlabel('time (ms)')
-plt.ylabel('current (pA/um2)')
-plt.show()
-
+ax2 = ax1.twinx()
+ax2.plot(xp.T, P[0].iClamper.Command, 'r-')
+"""
 

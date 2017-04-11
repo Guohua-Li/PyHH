@@ -1,5 +1,4 @@
 from pyhh import *
-import pylab as plt
 
 Glu = Ligand()
 
@@ -23,8 +22,7 @@ ampar_binding = {Glu:
 AMPAR = LGIC(ampar_transit, ampar_binding, gMax = 0.05, ER = 0)
 
 cpm = Compartment(diameter = 1.5, length = 100)
-ampar = cpm.add_channel(AMPAR)
-cpm.add_channel(gL)
+ampar, leak = cpm.add_channels(AMPAR,gL)
 
 cpm.add_vclamper()
 cpm.vClamper.Waveform = Rect(delay=0, width=150, amplitude=0)
@@ -35,6 +33,9 @@ deliver.Waveform = Rect(delay=2, width=10, amplitude=1)
 xp = Experiment(cpm)
 xp.run(20,dt=0.005)
 
+#deliver.plot()
+
+import pylab as plt
 plt.figure()
 plt.subplot(2,1,1)
 plt.plot(xp.T, cpm.vClamper.Jm, linewidth=2.0)
