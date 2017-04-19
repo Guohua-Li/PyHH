@@ -310,7 +310,7 @@ class VClamper:
       f.write(s)
     f.close()
 
-  def plot(self, show_Jm=1,show_Jn=1,show_Jp=0):
+  """def plot(self, show_Jm=1,show_Jn=1,show_Jp=0):
     fig = pl.figure()
     pl.subplot(2,1,1)
     if show_Jm==1: pl.plot(self.T, self.Jm, linewidth=3.0)
@@ -332,8 +332,33 @@ class VClamper:
     pl.plot(self.T, self.Command, linewidth=1.0)
     pl.xlabel('time (ms)')
     pl.ylim([self.Baseline-5,self.Waveform.Amplitude+self.Baseline+5])
-    pl.show()
+    pl.show()"""
 
+  def plot(self, show_Jm=1,show_Jn=1,show_Jp=0):
+    fig = pl.figure()
+    ax1 = pl.subplot2grid((3,1), (0,0), rowspan=2)
+    ax2 = pl.subplot2grid((3,1), (2,0))
+
+    if show_Jm==1: ax1.plot(self.T, self.Jm, linewidth=3.0)
+    if show_Jn==1: ax1.plot(self.T, self.Jn, linewidth=2.0)
+    if show_Jp==1:
+      Jp = self.calc_Jp()
+      ax1.plot(self.T, Jp, linewidth=1.0)
+
+    a = max(self.Jm)
+    b = max(self.Jn)
+    c = min(self.Jm)
+    d = min(self.Jn)
+    M = max(a,b)
+    m = min(c,d)
+    R = (M-m)/10.
+    pl.ylim([m-R,M+R])
+    pl.ylabel('Jm, Jn')
+
+    ax2.plot(self.T, self.Command, linewidth=1.0)
+    ax2.set_xlabel('time (ms)')
+    ax2.set_ylim([self.Baseline-5,self.Waveform.Amplitude+self.Baseline+5])
+    pl.show()
 
 
 class IMonitor:
@@ -483,7 +508,7 @@ class Compartment:
   Compartment on which neurons are built.
   """
   is_Compartment = 1
-  def __init__(self, diameter = 20, length = 50):
+  def __init__(self, diameter = 20, length = 50, channel_list=None):
     self.V0    = -61.237
     self.Vi    = self.V0
     self.Vdot  = 0.
@@ -500,7 +525,10 @@ class Compartment:
     self.ID = COUNT
     increment()
     self.Vm    = None # for storage of the membrane potential
-    self.channel_list = [] 
+    if channel_list != None:
+      self.add_channels(channel_list)
+    else:
+      self.channel_list = []
 
   def get_Jion(self, V):
     Jion = 0.0
@@ -509,14 +537,6 @@ class Compartment:
       Jion += g * (V - ch.ER)
     return Jion
 
-  """
-  def add_channels(self,*channels):
-    L = []
-    for i in channels:
-      ch = self._add_channel(i)
-      L.append(ch)
-    if len(L)==1: return L[0]
-    return tuple(L)"""
   def add_channels(self,*channels):
     L = []
     for i in channels:
@@ -555,7 +575,7 @@ class Compartment:
         ch.ptr = self
         return ch
 
-      if A >  1:
+      if A > 1:
         if A == 4: # special case
           ch = KChannel(Fa, gMax, ER)
           self.channel_list.append(ch)
@@ -606,6 +626,14 @@ class Compartment:
     ch.ptr = self
     return ch
 
+  def add_lgic(self, transit, binding, gMax, ER):
+    t = copy.deepcopy(transit)
+    b = copy.deepcopy(binding)
+    ch = LGIC(t, b, gMax, ER)
+    self.channel_list.append(ch)
+    ch.ptr = self
+    return ch
+
   def add_iclamper(self):
     clamper = IClamper()
     self.iClamper = clamper
@@ -621,14 +649,6 @@ class Compartment:
     self.iMonitor = monitor
     return monitor
 
-  """
-  def add(self, itemList):
-    for item in itemList:
-      if isIClamper(item):
-      elif isVClamper(item):
-      elif isLGIC(item):
-      else:
-  """
   def _calc_surface(self):
     if self.Length == None:
       self.Surface = 3.1415926 * (self.Diameter**2) # sphere
@@ -695,15 +715,24 @@ class Compartment:
   def show(self):
     print ('Vm =%f' % (self.Vi))
 
-  def plot(self,ylim=[-90,60]):
+  def plot(self):
     fig = pl.figure()
-    N = len(self.Vm)
-    if N == 0: return
-    pl.plot(self.T, self.Vm, linewidth=2.0)
-    pl.ylim(ylim)
-    pl.xlabel('time (ms)')
-    pl.ylabel('mV')
+    if self.iClamper:
+      ax1 = pl.subplot2grid((3,1), (0,0), rowspan=2)
+      ax2 = pl.subplot2grid((3,1), (2,0))
+      ax1.plot(self.T, self.Vm, linewidth=1.0)
+      ax2.plot(self.T, self.iClamper.Command, linewidth=1.0)
+      ax2.set_xlabel('time (ms)')
+      #ax2.set_ylim([self.Baseline-5,self.Waveform.Amplitude+self.Baseline+5])
+    else:
+      N = len(self.Vm)
+      if N == 0: return
+      pl.plot(self.T, self.Vm, linewidth=2.0)
+      #pl.ylim(ylim)
+      pl.xlabel('time (ms)')
+      pl.ylabel('mV')
     pl.show()
+
 
 
 
@@ -770,7 +799,6 @@ class Experiment:
     print ('Wait!')
     print ('...')
 
-    #self.C_Clampers = [cp.cClamper for cp in self.UNITS if cp.cClamper]
     self.C_Clampers = []
     for cp in self.UNITS: # check for missing values
       for ch in cp.channel_list:
@@ -814,8 +842,6 @@ class Experiment:
       if ic.Waveform:
         ic.Command = [ic.Waveform._func(self.T[i]) for i in range(steps)]
 
-    #for cp in self.CC_UNITS: # generate command from specified waveform
-    #  cc = cp.cClamper
     for cc in self.C_Clampers: # We access the clamper through Experiment
       cc.T = self.T
       cc.Command = [cc.Waveform._func(i*dt) for i in range(steps)]
@@ -881,14 +907,29 @@ class Experiment:
     print ('Integration done in %f seconds.  ^-^\n' % (t1-t0))
     ##########################
 
-  def plot(self,ylim=[-90,60]):
+  """def plot(self,ylim=[-90,60]):
     fig = pl.figure()
     for cp in self.UNITS:
       pl.plot(self.T, cp.Vm, linewidth=2.0)
     pl.ylim(ylim)
     pl.xlabel('time (ms)')
     pl.ylabel('mV')
+    pl.show()"""
+  def plot(self,ylim=[-90,60]):
+    fig = pl.figure()
+    ax1 = pl.subplot2grid((3,1), (0,0), rowspan=2)
+    ax2 = pl.subplot2grid((3,1), (2,0))
+    for cp in self.UNITS:
+      ax1.plot(self.T, cp.Vm, linewidth=2.0)
+      if cp.iClamper:
+        ax2.plot(self.T, cp.iClamper.Command, linewidth=1.0)
+
+    ax1.set_ylabel('voltage (mV)')
+    ax2.set_xlabel('time (ms)')
+    ax2.set_ylabel('current (pA/um2)')
     pl.show()
+
+
 
 class Ligand:
   """
@@ -2318,8 +2359,9 @@ def calcium_activated(gMax, ER, a, b = None, c = None):
   Fa, A = a[0], a[1]
   Fb, B = b[0], b[1]
   Fc, C = c[0], c[1]
-  if C == 1 and B == 1 and A == 1: return HHC_abc(Fa,Fb)
-  if C == 1 and B == 1 and A >  1: return HHC_aAbc(Fa,Fb)
-  if C == 1 and B  > 1 and A >  1: return HHC_aAbBc(Fa,Fb)
-  if C >  1 and B  > 1 and A >  1: return HHC_aAbBcC(Fa,Fb)
+  
+  if C == 1 and B == 1 and A == 1: return HHC_abc(Fa,Fb,Fc, gMax, ER)
+  if C == 1 and B == 1 and A >  1: return HHC_aAbc(Fa,A,Fb,Fc, gMax, ER)
+  if C == 1 and B  > 1 and A >  1: return HHC_aAbBc(Fa,A,Fb,B,Fc, gMax, ER)
+  if C >  1 and B  > 1 and A >  1: return HHC_aAbBcC(Fa,A,Fb,B,Fc,C, gMax, ER)
 
