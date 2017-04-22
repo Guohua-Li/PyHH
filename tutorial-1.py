@@ -7,11 +7,3 @@ xp = Experiment(cpm)
 xp.run(t=10, dt=0.005)
 cpm.plot()
 
-"""
-# or you can make your own plot:
-import pylab as plt
-plt.figure()
-plt.plot(xp.T, cpm.Vm)
-plt.show()
-
-"""
