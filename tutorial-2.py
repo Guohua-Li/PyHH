@@ -1,15 +1,11 @@
 from pyhh import *
 
-soma = Compartment(50,length=None)
-dend = Compartment(1.5,length=100)
-
-soma.add_channels(NaC, KDR, gL)
-dend.add_channels(NaC, KDR, gL)
-
-soma.connect(dend) # or dend.attached_to(soma)
+soma = Compartment(50, None, [NaC, KDR, gL])
+dend = Compartment(1.5, 100, [NaC, KDR, gL])
+dend.attached_to(soma)
 
 soma.add_iclamper()
-soma.iClamper.Waveform = Rect(delay=2, width=0.5, amplitude=1.45)
+soma.iClamper.Waveform = Alpha(delay=2, tau=0.5, amplitude=0.9)
 
 xp = Experiment([soma,dend])
 xp.run(10, 0.002)
