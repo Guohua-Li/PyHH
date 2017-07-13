@@ -1,5 +1,5 @@
 __doc__ = """
-                      PyHH Neuron Simulator
+                      PyHH Neuron Simulator v1.1
 
 PyHH is a small Python library for simulation of ion channel dynamics and the
 electrical activity of cells. It provides two ways of simulating ion channels:
@@ -205,12 +205,22 @@ class Train:
   def _func(self, t):
     t = t - self.Delay
     P = (self.Width+self.interval)
-    n = t // P
-    if n >= self.Number: return 0.0
+    if (t // P) >= self.Number: return 0.0
     if t < 0: return 0.0
     t = t % P
     if t < self.Width: return self.Amplitude
     else: return 0.0
+
+class TransRate:
+  def __init__(self, func, category='V'):
+    self.f = func
+    self.Rate = 0
+    self.Compt = None
+    self.Category = category
+
+  def update(self):
+    V = self.Compt.Vi
+    self.Rate = self.f(V)
 
 
 class CClamper:
@@ -334,13 +344,16 @@ class VClamper:
     pl.ylim([self.Baseline-5,self.Waveform.Amplitude+self.Baseline+5])
     pl.show()"""
 
-  def plot(self, show_Jm=1,show_Jn=1,show_Jp=0):
-    fig = pl.figure()
-    ax1 = pl.subplot2grid((3,1), (0,0), rowspan=2)
-    ax2 = pl.subplot2grid((3,1), (2,0))
 
-    if show_Jm==1: ax1.plot(self.T, self.Jm, linewidth=3.0)
-    if show_Jn==1: ax1.plot(self.T, self.Jn, linewidth=2.0)
+  def plot(self, show_Jm=1,show_Jn=1,show_Jp=0):
+    n = 4
+    m = n-1
+    fig = pl.figure()
+    ax1 = pl.subplot2grid((n,1), (0,0), rowspan=m)
+    ax2 = pl.subplot2grid((n,1), (m,0))
+
+    if show_Jm==1: ax1.plot(self.T, self.Jm, linewidth=1.0)
+    if show_Jn==1: ax1.plot(self.T, self.Jn, linewidth=1.0)
     if show_Jp==1:
       Jp = self.calc_Jp()
       ax1.plot(self.T, Jp, linewidth=1.0)
@@ -522,13 +535,13 @@ class Compartment:
     self.iMonitor = None
     self.Parent = None
     self.Child = []
+    self.RateList = []
     self.ID = COUNT
     increment()
     self.Vm    = None # for storage of the membrane potential
+    self.channel_list = []
     if channel_list != None:
       self.add_channels(channel_list)
-    else:
-      self.channel_list = []
 
   def get_Jion(self, V):
     Jion = 0.0
@@ -552,8 +565,20 @@ class Compartment:
 
   def _add_channel(self, Channel):
     if isLGIC(Channel):
+      Channel.transit = copy.deepcopy(Channel.transit)
       Channel.binding = copy.deepcopy(Channel.binding)
       ch = LGIC(Channel.transit,Channel.binding,Channel.gMax,Channel.ER) # python3.5
+      """for i in ch.Transit:
+        if isinstance(i, TransRate):
+          i.Ptr = self
+          self.RateList.append(i)"""
+      for i in range(ch.nStates):
+        for j in range(ch.nStates):
+          x = ch.Transit[i][j]
+          if isinstance(x, TransRate):
+            x.Compt = self
+            self.RateList.append(x)
+
     else:
       ch = copy.deepcopy(Channel)
     self.channel_list.append(ch)
@@ -716,21 +741,24 @@ class Compartment:
     print ('Vm =%f' % (self.Vi))
 
   def plot(self):
+    M,m = max(self.Vm), min(self.Vm)
+    R = (M - m)/10
     fig = pl.figure()
     if self.iClamper:
-      ax1 = pl.subplot2grid((3,1), (0,0), rowspan=2)
-      ax2 = pl.subplot2grid((3,1), (2,0))
+      ax1 = pl.subplot2grid((4,1), (0,0), rowspan=3)
+      ax2 = pl.subplot2grid((4,1), (3,0))
       ax1.plot(self.T, self.Vm, linewidth=1.0)
       ax2.plot(self.T, self.iClamper.Command, linewidth=1.0)
+      ax1.set_ylim([m-R,M+R])
       ax2.set_xlabel('time (ms)')
-      #ax2.set_ylim([self.Baseline-5,self.Waveform.Amplitude+self.Baseline+5])
+      ax2.set_ylim([0,1.1*self.iClamper.Waveform.Amplitude])
     else:
       N = len(self.Vm)
       if N == 0: return
       pl.plot(self.T, self.Vm, linewidth=2.0)
-      #pl.ylim(ylim)
       pl.xlabel('time (ms)')
       pl.ylabel('mV')
+      pl.set_ylim([m-R,M+R])
     pl.show()
 
 
@@ -805,6 +833,11 @@ class Experiment:
         if ch.Tag == 'LGIC':
           if ch.Ligand.Clamper: self.C_Clampers.append(ch.Ligand.Clamper)
 
+    self.Rates = []
+    for cp in self.UNITS:
+      for x in cp.RateList:
+        self.Rates.append(x)
+
     ### prepare to run
     self.VC_UNITS = [i for i in self.UNITS if i.vClamper]
     self.CC_UNITS = [i for i in self.UNITS if i.cClamper]
@@ -874,6 +907,9 @@ class Experiment:
       for cc in self.C_Clampers: # We access the clamper through Experiment
         cc.Ligand.Conc = cc.Command[step_num]
 
+      for x in self.Rates:
+        x.update()
+
       # Update_Start ========
       for cp in self.NC_UNITS:
         cp._update_Vm(dt)
@@ -916,11 +952,14 @@ class Experiment:
     pl.ylabel('mV')
     pl.show()"""
   def plot(self,ylim=[-90,60]):
+    n = 4
+    m = n-1
     fig = pl.figure()
-    ax1 = pl.subplot2grid((3,1), (0,0), rowspan=2)
-    ax2 = pl.subplot2grid((3,1), (2,0))
+    ax1 = pl.subplot2grid((n,1), (0,0), rowspan=m)
+    ax2 = pl.subplot2grid((n,1), (m,0))
     for cp in self.UNITS:
       ax1.plot(self.T, cp.Vm, linewidth=2.0)
+      ax1.set_ylim(ylim)
       if cp.iClamper:
         ax2.plot(self.T, cp.iClamper.Command, linewidth=1.0)
 
@@ -947,16 +986,25 @@ class LGIC:
   def __init__(self, transit, binding, gMax, ER):
     self.transit = transit # keep it for copying the channel
     self.binding = binding # keep it for copying the channel
-    self.State = 0
-    self.do_parsing(transit, binding)
-    self.N = len(self.RateMatrix)
-    self.StateProb = [0] * self.N    # create and initialize the state probability vector
-    self.StateProb[0] = 1.0
     self.gMax = gMax
     self.ER   = ER
+    self.Tag = 'LGIC'
+    self.ptr = None
     self.Ligands = list(binding.keys())
     if len(self.Ligands) == 1: self.Ligand = self.Ligands[0]
-    self.Tag = 'LGIC'
+
+    self.States = list(transit.keys()) # 2.x and 3.y are different
+    self.States.sort()
+    self.nStates = len(self.States)
+    self._get_transition(transit)
+    self._get_GateDict(binding)
+    self._collect_Open_states()
+    self._init_prob()
+    self._get_rate_matrix()
+
+  def _init_prob(self):
+    self.Prob = [0] * self.nStates # initialize the state probability vector
+    self.Prob[0] = 1.0
 
   def _set_gMax(self, val):
     self.gMax = val
@@ -964,24 +1012,30 @@ class LGIC:
   def _set_ER(self, val):
     self.gMax = val
 
-  def do_parsing(self, transit, binding):
-    States = list(transit.keys()) # 2.7 and 3.5 are different
-    States.sort()
-    N = len(States)
-    StateIndexDict = {}
-    for k in range(N):
-      s = States[k]
-      StateIndexDict[s] = k
-
-    self.RateMatrix = [[1]*N for i in range(N)] # like ones((N, N), float)
-    for i in range(N):
-      si = States[i]
-      for j in range(N):
-        sj = States[j]
+  def _get_transition(self, transit):
+    self.Transit = {}
+    for i in range(self.nStates):
+      si = self.States[i]
+      for j in range(self.nStates):
+        sj = self.States[j]
         if sj in transit[si].keys():
-          self.RateMatrix[i][j] = transit[si][sj]
+          T = transit[si][sj]
+          if callable(T): T = TransRate(T, 'V')
+          if i in self.Transit:
+            self.Transit[i].update({ j:T })
+          else:
+            self.Transit[i] = { j:T }
         else:
-          self.RateMatrix[i][j] = 0.0
+          if i in self.Transit:
+            self.Transit[i].update({ j:0 })
+          else:
+            self.Transit[i] = { j:0 }
+
+  def _get_GateDict(self, binding):
+    StateIndexDict = {}
+    for k in range(self.nStates):
+      s = self.States[k]
+      StateIndexDict[s] = k
 
     self.GateDict = {}
     for lg in binding.keys():
@@ -994,46 +1048,51 @@ class LGIC:
         paths.append((i,j))
       self.GateDict[lg] = paths
 
+  def _collect_Open_states(self):
     self.OpenIndex = []
-    for k in range(N):
-      if States[k][0] == 'O': self.OpenIndex.append(k)
+    for k in range(self.nStates):
+      if self.States[k][0] == 'O': self.OpenIndex.append(k)
+
+  def _get_rate_matrix(self):
+    N = self.nStates
+    states = range(N)
+    self.RM = [[1]*N for i in states] # like ones((N, N), float)
+    for i in states:
+      for j in states:
+        if isinstance(self.Transit[i][j], TransRate):
+          self.RM[i][j] = self.Transit[i][j].Rate
+        else:
+          self.RM[i][j] = self.Transit[i][j]
 
   def _ProbOpen(self):
     gate = 0.0
-    for k in self.OpenIndex: gate += self.StateProb[k]
+    for k in self.OpenIndex: gate += self.Prob[k]
     return gate
 
   def _update_gate(self, V, h):
-    N = self.N
-    rate = [[j for j in row] for row in self.RateMatrix] # copy self.RateMatrix
+    self._get_rate_matrix()
+    N = self.nStates
+    states = range(N)
     for lg, paths in self.GateDict.items():
       for s, t in paths:
-        rate[s][t]   = rate[s][t] * lg.Conc
-    A = [sum(i) for i in rate]           # sum of each row
-    m = [ [j*self.StateProb[i] for j in rate[i]] for i in range(len(rate)) ] # rate * self.XC
-    """
-    m = []
-    for i in range(len(rate)):
-      row = rate[i]
-      k = self.StateProb[i]
-      n = [j*k for j in row]
-      m.append(n)"""
+        self.RM[s][t] = self.RM[s][t] * lg.Conc
+    A = [sum(i) for i in self.RM]           # sum of each row
+    m = [ [j*self.Prob[i] for j in self.RM[i]] for i in states ] # self.RM * self.XC
     B = list(map(sum,zip(*m))) # sum of each vol, faster
-    for k in range(N):
+    for k in states:
       if A[k] == 0:
-        self.StateProb[k] = self.StateProb[k] + h * B[k]
+        self.Prob[k] = self.Prob[k] + h * B[k]
       else:
         C = B[k]/A[k]
-        self.StateProb[k] = (self.StateProb[k] - C) * exp(-A[k]*h) + C
-    S = sum(self.StateProb)
+        self.Prob[k] = (self.Prob[k] - C) * exp(-A[k]*h) + C
+    S = sum(self.Prob)
     if S != 0:
-      self.StateProb = [x/S for x in self.StateProb]
+      self.Prob = [x/S for x in self.Prob]
 
   def show(self):
-    N = len(self.StateProb)
     print ("State Probabilities:")
-    for k in range(N):
-      print ("%5.4f"%(self.StateProb[k]))
+    for k in range(self.nStates):
+      print ("%5.4f"%(self.Prob[k]))
 
 
 class CaPool:
