@@ -4,4 +4,4 @@ Why PyHH?
 
 PyHH is written for patch clamper, and uses terms which are easily understood by those with patch clamp experience. In addition, it is easy to use. PyHH does not depend on other libraries. The tutorial materials help you start with PyHH. Just drop all the files in a folder where you want to use PyHH. I will update the the example scripts regularly. 
 
-There are 4 releases right now. Click release to download the latest version (v1.1).
+There are 4 releases right now. Click release to download the latest version (v1.1).The files tutorial-NMDAR.pdf and tutorial-NMDAR.py were added with the new release.
