@@ -1,4 +1,4 @@
-PyHH is a small Python library based on Hodgkin-Huxley formulation for voltage-gated ion channels (VGICs) and the Markov model for ligand-gated ion channels (LGICs) as well as (VGICs). Knowledge about Python programing is helpful, but not required. PyHH is small, but can be used for building very complicated neuron models. It is useful for patch clamper to better understand some important concepts in electrophysiology. 
+Conformational transitions between functional states close or open ion conduction pathways. This behavior can be quantitatively described by the Hodgkin-Huxley formulation or by the Markov formulation. PyHH is a small Python library based on the Hodgkin-Huxley formulation for voltage-gated ion channels (VGICs) and the Markov model for ligand-gated ion channels (LGICs) as well as VGICs. Knowledge about Python programing is helpful, but not required. PyHH is small, but can be used for building very complicated neuron models. It is useful for patch clamper to better understand some important concepts in electrophysiology. 
 
 Why PyHH?
 
