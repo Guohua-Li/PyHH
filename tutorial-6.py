@@ -1,4 +1,8 @@
-from pyhh import *
+from compartment import Compartment
+from lgic import Ligand, LGIC
+from clampers import CClamper, VClamper, Rect
+from experiment import Experiment
+
 
 Glu = Ligand()
 
@@ -21,29 +25,14 @@ ampar_binding = {Glu:
 
 AMPAR = LGIC(ampar_transit, ampar_binding, gMax = 0.05, ER = 0)
 
-cpm = Compartment(diameter = 1.5, length = 100)
-ampar, leak = cpm.add_channels(AMPAR,gL)
+cell = Compartment(diameter = 1.5, length = 100)
+ampar = cell.add_channels(AMPAR)
 
-cpm.add_vclamper()
-cpm.vClamper.Waveform = Rect(delay=0, width=150, amplitude=0)
+cell.add_vclamper(-60)
+cell.vClamper.Waveform = Rect(delay=0, width=150, amplitude=0)
 
 deliver = CClamper(ampar.Ligand)
 deliver.Waveform = Rect(delay=2, width=10, amplitude=1)
 
-xp = Experiment(cpm)
-xp.run(20,dt=0.005)
-
-#deliver.plot()
-
-import pylab as plt
-plt.figure()
-plt.subplot(2,1,1)
-plt.plot(xp.T, cpm.vClamper.Jm, linewidth=2.0)
-plt.ylim([-1,0.1])
-
-plt.subplot(2,1,2)
-plt.plot(xp.T, deliver.Command, linewidth=2.0)
-plt.ylim([-0.5,1.5])
-
-plt.show()
-
+xp = Experiment(cell)
+xp.run(20)
