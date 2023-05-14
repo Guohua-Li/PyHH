@@ -3,6 +3,7 @@ from channels import NaC, KDR, gL
 from clampers import Rect, VClamper
 from experiment import Experiment
 
+# we have 3 types of channel: sodium/NaC, potassium/KDR, and leak/gL
 cell = Compartment(diameter=50, length=None, channel_list=[NaC, KDR, gL])
 
 clamper = VClamper(baseline = -60)
