@@ -14,15 +14,15 @@ Basic units used in PyHH are:
  (6). length:        um
  (7). area:          um2
  (8). concentration: mM
- (9). Specific membrane conductance (Gm):       nS / um2
- (10).Specific membrance capacitance (Cm):      pF / um2
- (11).Specific axial conductance (Ga):          nS / um
+ (9). Specific membrane conductance (Gm):       nS/um2
+ (10).Specific membrance capacitance (Cm):      pF/um2
+ (11).Specific axial conductance (Ga):          nS/um
 
 Symbols:
-  transmembrane current density (Jm): pA/um2
-  cytosolic current density (Jn): pA ??
+  transmembrane current density (J_ion): pA/um2
+  total injected current density (J_injs): pA /um2
   maximum conductances per unit area (gMax): nS/um2
-  axial current density (Jx?):
+  axial current density (J_axial):
 Some important relationship between units are
  pA = pF * mV / ms = mV / Gohm = nS * mV
 
@@ -88,10 +88,7 @@ class Experiment:
 
     N = len(self.UNITS)
     print ('_________________________________________\n')
-    if N > 1:
-      print ('%i compartments supplied\n'%(N))
-    else:
-      print ('%i compartment supplied\n'%(N))
+    print ('%i compartment(s) supplied'%(N))
 
   def save(self, filename):
     N = len(self.T)
@@ -107,122 +104,123 @@ class Experiment:
       cp.show()
       for ch in cp.channel_list: ch.show()
 
-  def run(self, t, dt=0.005):
+  def calc_axial(self): # get J_axial (axial current density)
+    for cp in self.UNITS:
+      if cp.Parent:
+        cp.J_axial = (cp.Vi - cp.Parent.Vi) * cp.gx/cp.Surface
+      else:
+        cp.J_axial = 0.0
+
+  def calc_total(self, i): # net current to this compartment, excluding transmembrane ionic and capacitive currents
+    for cp in self.UNITS:
+      inj = 0.0 if cp.iClamper == None else cp.iClamper.Command[i] # clamper current density
+      cp.J_total = inj - cp.J_axial # current leaving the compartment
+      for chd in cp.Children:       # current coming from the child compartments
+        cp.J_total += chd.J_axial
+
+  def run(self, t, dt=0.005, verbose=True):
     steps = int(t/dt)
-    self.T = [i*dt+self.Clock for i in range(steps)]
-    self.Clock += t
+    self.T = [i*dt + self.Clock for i in range(steps)]
+    if verbose:
+      print( "Number of steps {}, with step length of {}".format(steps, dt) )
+      print ("Integration in process ...")
 
-    print ("Integration in process")
-    print ('Number of steps: %i'% (steps))
-    print ("Step length: %5.4f ms" % (dt))
-    print ('Wait!')
-    print ('...')
-
-    self.C_Clampers = []
+    C_Clampers = []
     for cp in self.UNITS: # check for missing values
       for ch in cp.channel_list:
         if ch.Tag == 'LGIC':
-          if ch.Ligand.Clamper: self.C_Clampers.append(ch.Ligand.Clamper)
+          if ch.Ligand.Clamper: C_Clampers.append(ch.Ligand.Clamper)
 
-    self.Rates = []
+    self.VoltGatings = []
     for cp in self.UNITS:
-      for x in cp.RateList:
-        self.Rates.append(x)
+      for volt_gate in cp.RateList: # Only VoltageGate
+        self.VoltGatings.append(volt_gate)
 
     ### prepare to run
-    self.VC_UNITS = [i for i in self.UNITS if i.vClamper]
-    self.CC_UNITS = [i for i in self.UNITS if i.cClamper]
-    self.IC_UNITS = [i for i in self.UNITS if i.iClamper]
-    self.IM_UNITS = [i for i in self.UNITS if i.iMonitor]
-    self.NC_UNITS = list(set(self.UNITS)-set(self.VC_UNITS))
+    vcUnits = [i for i in self.UNITS if i.vClamper]
+    icUnits = [i for i in self.UNITS if i.iClamper]
+    imUnits = [i for i in self.UNITS if i.iMonitor]
+    ncUnits = list(set(self.UNITS)-set(vcUnits))
 
     for cp in self.UNITS: # check for missing values
       cp.dt = dt
       cp.T = self.T
-      for ch in cp.channel_list:
-        if ch.gMax == None:
-          raise Exception('Ion channel %s in Compartment %i doen not have gMax value.')
-
-        if ch.ER == None:
-          raise Exception('Ion channel %s in Compartment %i doen not have ER value.')
 
     for cp in self.UNITS: # prepare the storages based on run parameters
       cp.Vm = array.array('f',[cp.V0]) * steps
       for ch in cp.channel_list:
         ch.gM = array.array('f',[0]) * steps
 
-    for cp in self.VC_UNITS:
+    for cp in vcUnits:
       cp.vClamper.T = self.T
-      cp.vClamper.Jm = array.array('f',[0]) * steps
-      cp.vClamper.Jn = array.array('f',[0]) * steps
+      cp.vClamper.J_ion  = array.array('f', [0]) * steps
+      cp.vClamper.J_injs = array.array('f', [0]) * steps
 
-    for cp in self.IM_UNITS:
-      cp.iMonitor.Jm = array.array('f',[0]) * steps
-      cp.iMonitor.Jn = array.array('f',[0]) * steps
-      cp.iMonitor.Jc = array.array('f',[0]) * steps
+    for cp in imUnits:
+      i_monitor = cp.iMonitor
+      i_monitor.J_ion  = array.array('f', [0]) * steps
+      i_monitor.J_injs = array.array('f', [0]) * steps
+      i_monitor.J_cap  = array.array('f', [0]) * steps # Capacitive current density
 
-    for cp in self.IC_UNITS: # generate command from specified waveform
-      ic = cp.iClamper
-      if ic.Waveform:
-        ic.Command = [ic.Waveform._func(self.T[i]) for i in range(steps)]
+    for cp in icUnits: # generate command from specified waveform
+      clamper = cp.iClamper
+      if clamper.Waveform:
+        clamper.Command = [clamper.Waveform._func(i*dt) for i in range(steps)]
+      else:
+        clamper.Command = [0.0 for i in range(steps)] # added May 16, 2023
 
-    for cc in self.C_Clampers: # We access the clamper through Experiment
-      cc.T = self.T
-      cc.Command = [cc.Waveform._func(i*dt) for i in range(steps)]
+    for clamper in C_Clampers: # We access the clamper through Experiment
+      clamper.T = self.T
 
-    for cp in self.VC_UNITS: # generate command from specified waveform
-      vc = cp.vClamper
-      if vc.Waveform:
-        vc.Command = [vc.Waveform._func(i*dt) + vc.Baseline for i in range(steps)]
-        vc.dot = [0.] + [ (vc.Command[i]-vc.Command[i-1])/dt for i in range(1,steps) ]
+      if clamper.Waveform:
+        clamper.Command = [clamper.Waveform._func(i*dt) for i in range(steps)]
+      else:
+        clamper.Command = [0.0 for i in range(steps)] # added May 20, 2023
+
+    for cp in vcUnits: # generate command from specified waveform
+      clamper = cp.vClamper
+      if clamper.Waveform:
+        clamper.Command = [clamper.Waveform._func(i*dt) + clamper.Baseline for i in range(steps)]
+        clamper.dot = [0.] + [ (clamper.Command[i]-clamper.Command[i-1])/dt for i in range(1,steps) ]
+      else:
+        clamper.Command = [0.0 + clamper.Baseline for i in range(steps)] # added May 16, 2023
+        clamper.dot     = [0.0 for i in range(steps) ]              # added May 16, 2023
 
     ###-------------------------------###
+
     t0 = time.time()
     for step_num in range(steps): # looping begins
-      for cp in self.UNITS:
-        if cp.iClamper:      # we don't directly access the clamper
-          cp.Ja = cp.iClamper.Command[step_num]
-        else:
-          cp.Ja = 0.0
 
-        if cp.Parent:        # get Jx (axial current density)
-          cp.Jx = (cp.Vi - cp.Parent.Vi) * cp.gx/cp.Surface
-        else:
-          cp.Jx = 0.0
+      self.calc_axial()
+      self.calc_total(step_num)
 
-      for cp in self.UNITS:  # sum up non-transmembrane, non-capacitive current
-        cp.Jn = cp.Ja - cp.Jx
-        for chd in cp.Child:
-          cp.Jn += chd.Jx
+      for c_clamper in C_Clampers: # We access the clamper through Experiment
+        c_clamper.Ligand.Conc = c_clamper.Command[step_num]
 
-      for cc in self.C_Clampers: # We access the clamper through Experiment
-        cc.Ligand.Conc = cc.Command[step_num]
-
-      for x in self.Rates:
-        x.update()
+      for volt_gate in self.VoltGatings:
+        volt_gate.update()
 
       # Update_Start ========
-      for cp in self.NC_UNITS:
+      for cp in ncUnits:
         cp._update_Vm(dt)
 
         for ch in cp.channel_list:
-          ch._update_gate(cp.Vi,dt)
-          #ch._update_gMax(dt)
+          ch._update_gate(cp.Vi, dt)
 
-      for cp in self.IM_UNITS: # Current Recording
-        im = cp.iMonitor
-        im.Jm[step_num] = cp.get_Jion(cp.Vi)
-        im.Jn[step_num] = cp.Jn
-        im.Jc[step_num] = cp.Cm * cp.Vdot
+      for cp in imUnits: # Current Recording
+        i_monitor = cp.iMonitor
+        i_monitor.J_ion[step_num]  = cp.get_Jion(cp.Vi)
+        i_monitor.J_injs[step_num] = cp.J_total
+        i_monitor.J_cap[step_num]  = cp.Cm * cp.Vdot
 
-      for cp in self.VC_UNITS: # Voltage-Clamp block
-        vc = cp.vClamper
-        cp.Vi = vc.Command[step_num]
+      for cp in vcUnits: # Voltage-Clamp block
+        clamper = cp.vClamper
+        cp.Vi = clamper.Command[step_num]
         for ch in cp.channel_list:
-          ch._update_gate(cp.Vi,dt)
+          ch._update_gate(cp.Vi, dt)
 
-        vc.Jm[step_num] = cp.get_Jion(vc.Command[step_num])
-        vc.Jn[step_num] = cp.Jn
+        clamper.J_ion[step_num] = cp.get_Jion(clamper.Command[step_num])
+        clamper.J_injs[step_num] = cp.J_total # renamed
 
       # Update_End ========
       for cp in self.UNITS: # Store membrane potentials
@@ -232,17 +230,11 @@ class Experiment:
 
     t1 = time.time()
     print ('Integration done in %f seconds.  ^-^\n' % (t1-t0))
+    self.Clock = self.T[-1] + dt
+
     ##########################
 
-  """def plot(self,ylim=[-90,60]):
-    fig = plt.figure()
-    for cp in self.UNITS:
-      plt.plot(self.T, cp.Vm, linewidth=2.0)
-    plt.ylim(ylim)
-    plt.xlabel('time (ms)')
-    plt.ylabel('mV')
-    plt.show()"""
-  def plot(self,ylim=[-90,60]):
+  def plot_Vm(self,vlimit=[-90,60]):
     n = 4
     m = n-1
     fig = plt.figure()
@@ -250,7 +242,7 @@ class Experiment:
     ax2 = plt.subplot2grid((n,1), (m,0))
     for cp in self.UNITS:
       ax1.plot(self.T, cp.Vm, linewidth=2.0)
-      ax1.set_ylim(ylim)
+      ax1.set_ylim(vlimit)
       if cp.iClamper:
         ax2.plot(self.T, cp.iClamper.Command, linewidth=1.0)
 
@@ -258,4 +250,3 @@ class Experiment:
     ax2.set_xlabel('time (ms)')
     ax2.set_ylabel('current (pA/um2)')
     plt.show()
-
