@@ -1,36 +1,36 @@
+"""
+This tutorial shows how the sodium (in green) and potassium (in purple) 
+conductances changes during an action potential.
+
+"""
+
 from compartment import Compartment
-from gating import NaT, KDR, gL
-from clampers import Rect
 from experiment import Experiment
+from gating import NaT, KDR, gL
+from ploting import plot_Vm
 
 
-channels = {
-    NaT: [0.6,  50],
-    KDR: [0.18,-90],
-    gL:  [0.03,-60]
-}
+channels = { NaT: [0.6,  50], KDR: [0.18,-90], gL:  [0.03,-60] }
 
-soma = Compartment(diameter=40, length=None, channels=channels) 
-compartments = [soma]
+soma = Compartment(40, None, channels)
+dend = Compartment(1.5, 100, channels, parent=soma) # soma can not be a child.
 
-num = 20   # number of compartments to be created
-diam = 1.5  # diameter of each compartment
-leng = 50   # length of each compartment
+for chnn in soma.channel_list:
+    print(chnn.Tag)
 
-for i in range(1,num):
-    p = Compartment(diam, leng, channels=channels, parent=compartments[i-1])
-    compartments.append(p)
+nav = soma.get_channel("NaT")
+nav.set_recording(True)
 
-"""
-for i in range(num-1):
-    p = Compartment(diam, leng, [NaT, KDR, gL], parent=compartments[-1])
-    compartments.append(p)
-"""
+kdr = soma.get_channel("KDR")
+kdr.set_recording(True)
 
-clamper = compartments[0].add_iclamper()
-clamper.Waveform = Rect(delay=1.5, width=1.0, amplitude=1.9)
+clamper = soma.add_iclamper("alpha", delay=2, tau=0.5, amplitude=0.9)
 
-xp = Experiment(compartments)
-xp.run(20)
-xp.plot_Vm()
+xp = Experiment(soma, dend)
 
+xp.run(15)
+#xp.plot_Vm() # xp stores the membrane potentials of all compartments
+
+#nav.plot_conductance(xp.T)
+
+plot_Vm([soma], g_grid=True)
