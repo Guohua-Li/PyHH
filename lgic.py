@@ -1,4 +1,8 @@
+# modified on May 19, 2023
+# modified on May 21, 2023
 from math import exp
+
+from gating import Gating
 
 class Ligand:
   """
@@ -9,25 +13,26 @@ class Ligand:
     self.Clamper = None
 
 
-class Transition:
+class VariableRate:
   def __init__(self, func, category = 'V'):
     self.Rate = 0
     self.f = func
     self.Compt = None
     self.Category = category
-    self.Tag = "Transition"
+    self.Tag = "VariableRate"
 
-  def update(self):
+  def update_rate(self):
     V = self.Compt.Vi
     self.Rate = self.f(V)
 
 
-class LGIC:
+class LGIC(Gating):
   """
   LGICs based on Markov transition schemes.
   """
   is_LGIC = 1
-  def __init__(self, transit, binding):
+  def __init__(self, transit, binding, recording="none"):
+    Gating.__init__(self, recording)
     self.transit = transit # keep it for copying the channel
     self.binding = binding # keep it for copying the channel
     self.Tag = 'LGIC'
@@ -92,7 +97,7 @@ class LGIC:
     rate_mat = [[0]*self.nStates for i in state_numbers] # like zeros/ones((N, N), float), N rows, N cols
     for i in state_numbers:
       for j in state_numbers:
-        if isinstance(self.Transit[i][j], Transition): # NMDAR will use this
+        if isinstance(self.Transit[i][j], VariableRate): # NMDAR will use this
           rate_mat[i][j] = self.Transit[i][j].Rate # At the start, Rate = 0
         else:
           rate_mat[i][j] = self.Transit[i][j]
@@ -115,12 +120,14 @@ class LGIC:
     if S != 0:
       self.Prob = [x/S for x in self.Prob]
 
-  def _ProbOpen(self): # only used by compartment
-    gate = 0.0
-    for k in self.OpenStateNumbers: gate += self.Prob[k]
-    return gate
+  def _ProbOpen(self, step): # only used by compartment
+    p = 0.0
+    for k in self.OpenStateNumbers: p += self.Prob[k]
+    if self.Recording: self.trace[step] = p
+    return p
 
   def show(self):
     print ("State Probabilities:")
     for k in range(self.nStates):
       print ("%5.4f"%(self.Prob[k]))
+
