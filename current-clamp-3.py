@@ -1,46 +1,36 @@
+"""
+In this tutorial, we are going to inject a rectangle current pulse 
+to see the changes in membrane potentials. For this purpose, 
+we need to import the IClamper and the Rect classes.
+
+"""
+
 from compartment import Compartment
-from gating import NaT, KDR, gL
-from clampers import Alpha # stimulation waveform
 from experiment import Experiment
+from gating import NaT, KDR, gL
+from clampers import IClamper
+from ploting import plot_recording
 
-channels = {
-    NaT: [0.6,  50],
-    KDR: [0.18,-90],
-    gL:  [0.03,-60]
-}
 
-soma = Compartment(50, None, channels)
-dend = Compartment(1.5, 100, channels, parent=soma) # soma can not be a child.
 
-clamper = soma.add_iclamper()
-clamper.Waveform = Alpha(delay=2, tau=0.5, amplitude=0.9)
 
-preparations = [soma, dend]
+chann_dist = { NaT: [0.6,  50], KDR: [0.18,-90], gL:  [0.03,-60] }
 
-xp = Experiment(preparations)
-xp.run(10)
-xp.plot_Vm() # xp stores the membrane potentials of all compartments
+cell = Compartment(diameter=40, length=None, channels = chann_dist)
+clamper = IClamper(cell) # first, we define a clamper
+clamper.set_waveform('rect', delay = 2.5, amplitude=0.45)
 
-xp.run(10)
-xp.plot_Vm()
+xp = Experiment(cell)
 
-xp.Clock = 0
-xp.run(10)
-xp.plot_Vm()
 
-"""
-# make your own plot:
-import matplotlib.pyplot as plt
-plt.figure()
-plt.subplot(2,1,1)
-plt.plot(xp.T, soma.Vm)
-plt.plot(xp.T, dend.Vm, linewidth=2.0)
-plt.ylim([-80,30])
-plt.ylabel('V (mV)')
-plt.subplot(2,1,2)
-plt.plot(xp.T, soma.iClamper.Command, linewidth=2.0)
-plt.ylim([-1,2])
-plt.xlabel('time (ms)')
-plt.ylabel('current (pA/um2)')
-plt.show()
-"""
+VmTraces = [] # store potential from each run
+StTraces = [] # store stimulus from each run
+widths = [0.2, 0.4, 0.6, 0.8,1, 1.2, 1.4, 1.6]
+
+for width in widths:
+    clamper.set_width(width)
+    xp.run(t = 20)
+    VmTraces.append(cell.Vm)
+    StTraces.append(clamper.Command)
+
+plot_recording(xp.T, VmTraces, StTraces)
