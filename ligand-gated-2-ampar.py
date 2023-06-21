@@ -1,22 +1,8 @@
 from compartment import Compartment
 from lgic import Ligand, LGIC
-from clampers import CClamper, VClamper, Rect
+from clampers import CClamper, VClamper
 from experiment import Experiment
 
-import matplotlib.pyplot as plt
-
-
-def plt_current(t, current, command):
-  plt.figure()
-  plt.subplot(2,1,1)
-  plt.plot(xp.T, current, linewidth=1.0)
-  plt.ylim([-1,0.1])
-
-  plt.subplot(2,1,2)
-  plt.plot(xp.T, command, linewidth=2.0)
-  plt.ylim([-0.5,1.5])
-
-  plt.show()
 
 
 Glu = Ligand()
@@ -47,17 +33,13 @@ channels = {
 cell = Compartment(diameter = 1.5, length = 100)
 ampar = cell.add_channels(channels)
 
-cell.add_vclamper(-60)
-#cell.vClamper.Waveform = Rect(delay=0, width=150, amplitude=0)
+vclamper = cell.add_vclamper(-60)
 
 deliver = CClamper(ampar.Ligand)
-deliver.Waveform = Rect(delay=2, width=10, amplitude=1)
+deliver.set_waveform('rect', delay=2, width=10, amplitude=1)
 
 xp = Experiment(cell)
 xp.run(20)
 
-plt_current(xp.T, cell.vClamper.J_ion, deliver.Command)
-
-#deliver.plot()
-
+xp.plot_lgic()
 
