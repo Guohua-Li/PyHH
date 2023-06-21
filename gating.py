@@ -1,7 +1,9 @@
+# modified on May 19, 2023
 from math import exp
 
 
 import matplotlib.pyplot as plt
+
 
 def Fm(V): # Na channel, m gate
   v = V + 35 # 35 -> 40
@@ -109,25 +111,54 @@ def _plt(f1, f2=None, f3=None, Vi=None):
   plt.show()
 
 
-class LeakChannel:
+class Gating:
+
+  def __init__(self, recording=False):
+    self.ptr = None
+    self.trace = None
+    self.Recording = recording
+
+  def set_recording(self, recording):
+    self.Recording = recording
+
+  def plot_conductance(self, t):
+    if not self.Recording: return
+    fig = plt.figure()
+    plt.plot(t, self.trace)
+    plt.show()
+
+
+
+
+
+class LeakChannel(Gating):
   """
   Leak conductance
   """
-  def __init__(self):
+  def __init__(self, recording=False):
+    Gating.__init__(self, recording)
     self.Tag = 'Leak'
-    self.ptr = None
 
-  def _ProbOpen(self): return 1.0
+  def set_recording(self, recording): return
+
+  def _ProbOpen(self,step): return 1.0
+
   def _update_gate(self, V, dt): return
+
   def store_gates(self, mem=0): return
+
   def load_gates(self, mem=0): return
+
   def show(self): pass
 
-class NaChannel:
+
+
+class NaChannel(Gating):
   """
   Classical sodium channel
   """
-  def __init__(self, fa, fb):
+  def __init__(self, fa, fb, recording=False):
+    Gating.__init__(self, recording)
     self._fa = fa
     self._fb = fb
     self.a0 = 0.046
@@ -135,10 +166,11 @@ class NaChannel:
     self.a  = self.a0
     self.b  = self.b0
     self.Tag  = 'NaT'
-    self.ptr = None
 
-  def _ProbOpen(self):
-    return (self.a**3) * self.b
+  def _ProbOpen(self, step):
+    p = (self.a**3) * self.b
+    if self.Recording: self.trace[step] = p
+    return p
 
   def _update_gate(self, V, dt):
     ta, fa = self._fa(V)
@@ -151,23 +183,42 @@ class NaChannel:
     print('a =  %4.3f' % (self.a))
     print('b =  %4.3f' % (self.b))
 
-  def plot(self):
+  def plot_gating(self):
     _plt(self._fa, self._fb)
 
+  def print_params(self, V):
+    tau_a, inf_a = self._fa(V)
+    tau_b, inf_b = self._fb(V)
+    print("tau_a, inf_a = ", tau_a, inf_a)
+    print("tau_b, inf_b = ", tau_b, inf_b)
 
-class KChannel:
+  def print_fastest(self):
+    ta_min = 100.0
+    tb_min = 100.0
+    for V in arange(-80,50,0.1):
+      tau_a, inf_a = self._fa(V)
+      tau_b, inf_b = self._fb(V)
+      if tau_a < ta_min: ta_min = tau_a
+      if tau_b < tb_min: tb_min = tau_b
+    print(ta_min)
+    print(tb_min)
+
+
+class KChannel(Gating):
   """
   Classical potassium channel
   """
-  def __init__(self, f = Fn):
+  def __init__(self, f = Fn, recording=False):
+    Gating.__init__(self, recording)
     self._f = f
     self.a0 = 0.299
     self.a  = self.a0
-    self.ptr = None
     self.Tag  = 'KDR'
 
-  def _ProbOpen(self):
-    return self.a**4
+  def _ProbOpen(self, step):
+    p = self.a**4
+    if self.Recording: self.trace[step] = p
+    return p
 
   def _update_gate(self, V, dt):
     k, f = self._f(V)
@@ -185,19 +236,21 @@ KDR = KChannel(Fn)
 gL  = LeakChannel()
 
 
-class HH_a:
+class HH_a(Gating):
   """
   gating: a
   """
-  def __init__(self, f):
+  def __init__(self, f, recording=False):
+    Gating.__init__(self, recording)
     self._f = f
     self.a0 = 0.046
     self.a  = self.a0
     self.Tag = 'HH_a'
-    self.ptr = None
 
-  def _ProbOpen(self):
-    return self.a
+  def _ProbOpen(self, step):
+    p = self.a
+    if self.Recording: self.trace[step] = p
+    return p
 
   def _update_gate(self, V, dt):
     tau, inf = self._f(V)
@@ -214,11 +267,12 @@ class HH_a:
     _plt(self._f, Vi=Vm)
 
 
-class HH_aAb:
+class HH_aAb(Gating):
   """
   gating: (a**A) * b
   """
-  def __init__(self, fa, A, fb):
+  def __init__(self, fa, A, fb, recording=False):
+    Gating.__init__(self, recording)
     self._fa = fa
     self._fb = fb
     self.A = A
@@ -227,14 +281,15 @@ class HH_aAb:
     self.a  = self.a0
     self.b  = self.b0
     self.Tag = 'HH_a(A)b'
-    self.ptr = None
 
   def couple(self, p):
     self.pool_pointer = p
     p.target = self
 
-  def _ProbOpen(self):
-    return (self.a**self.A) * self.b
+  def _ProbOpen(self, step):
+    p = (self.a**self.A) * self.b
+    if self.Recording: self.trace[step] = p
+    return p
 
   def _update_gate(self, V, dt):
     ta, fa = self._fa(V)
@@ -252,11 +307,12 @@ class HH_aAb:
     _plt(self._fa, self._fb, Vi = Vm)
 
 
-class HH_aAbB:
+class HH_aAbB(Gating):
   """
   gating: (a**N) * (b**M)
   """
-  def __init__(self, fa, A, fb, B):
+  def __init__(self, fa, A, fb, B, recording=False):
+    Gating.__init__(self, recording)
     self._fa = fa
     self._fb = fb
     self.A = A
@@ -266,10 +322,11 @@ class HH_aAbB:
     self.a  = 0.046
     self.b  = 0.638
     self.Tag = 'a(A)b(B)'
-    self.ptr = None
 
-  def _ProbOpen(self):
-    return (self.a**self.A) * (self.b**self.B)
+  def _ProbOpen(self,step):
+    p = (self.a**self.A) * (self.b**self.B)
+    if self.Recording: self.trace[step] = p
+    return p
 
   def _update_gate(self, V, dt):
     ta, fa = self._fa(V)
@@ -286,20 +343,22 @@ class HH_aAbB:
     _plt(self._fa, self._fb, Vi=Vm)
 
 
-class HH_aA:
+class HH_aA(Gating):
   """
   gating: a**A
   """
-  def __init__(self, f, A):
+  def __init__(self, f, A, recording=False):
+    Gating.__init__(self, recording)
     self._Func = f
     self.N = A
     self.a0 = 0.299
     self.a = self.a0
     self.Tag = 'HH_a(A)'
-    self.ptr = None
 
-  def _ProbOpen(self):
-    return self.a**self.N
+  def _ProbOpen(self,step):
+    p = self.a**self.N
+    if self.Recording: self.trace[step] = p
+    return p
 
   def _update_gate(self, V, dt):
     k, f = self._Func(V)
@@ -313,11 +372,12 @@ class HH_aA:
     _plt(self._fa, Vi=Vm)
 
 
-class HH_ab:
+class HH_ab(Gating):
   """
   gating: a*b
   """
-  def __init__(self, fa, fb):
+  def __init__(self, fa, fb, recording=False):
+    Gating.__init__(self, recording)
     self._fa = fa
     self._fb= fb
     self.a0 = 0.046
@@ -325,10 +385,11 @@ class HH_ab:
     self.a  = 0.046
     self.b  = 0.046
     self.Tag = 'HH_ab'
-    self.ptr = None
 
-  def _ProbOpen(self):
-    return self.a * self.b
+  def _ProbOpen(self,step):
+    p = self.a * self.b
+    if self.Recording: self.trace[step] = p
+    return p
 
   def _update_gate(self, V, dt):
     ta, fa = self._fa(V)
@@ -352,11 +413,12 @@ class HH_ab:
 
 
 
-class HH_abc:
+class HH_abc(Gating):
   """
   gating: a*b*c
   """
-  def __init__(self, fa, fb, fc):
+  def __init__(self, fa, fb, fc, recording=False):
+    Gating.__init__(self, recording)
     self._fa = fa
     self._fb = fb
     self._fc = fc
@@ -367,10 +429,11 @@ class HH_abc:
     self.b  = 0.638
     self.c  = 0.638
     self.Tag  = 'HH_abc'
-    self.ptr = None
 
-  def _ProbOpen(self):
-    return self.a * self.b * self.c
+  def _ProbOpen(self,step):
+    p = self.a * self.b * self.c
+    if self.Recording: self.trace[step] = p
+    return p
 
   def _update_gate(self, V, dt):
     ta, fa = self._fa(V)
@@ -399,11 +462,12 @@ class HH_abc:
     _plt(self._fa, self._fb, self._fc, Vi=Vm)
 
 
-class HH_aAbc:
+class HH_aAbc(Gating):
   """
   gating: (a**A) * b * c
   """
-  def __init__(self, fa, A, fb, fc):
+  def __init__(self, fa, A, fb, fc, recording=False):
+    Gating.__init__(self, recording)
     self._fa = fa
     self._fb = fb
     self._fc = fc
@@ -415,10 +479,11 @@ class HH_aAbc:
     self.b  = 0.638
     self.c  = 0.638
     self.Tag  = 'HH_aAbc'
-    self.ptr = None
 
-  def _ProbOpen(self):
-    return (self.a**self.A) * self.b * self.c
+  def _ProbOpen(self,step):
+    p = (self.a**self.A) * self.b * self.c
+    if self.Recording: self.trace[step] = p
+    return p
 
   def _update_gate(self, V, dt):
     ta, fa = self._fa(V)
@@ -447,11 +512,12 @@ class HH_aAbc:
     _plt(self._fa, self._fb, self._fc, Vi = Vm)
 
 
-class HH_aAbBc:
+class HH_aAbBc(Gating):
   """
   gating: (a**A) * (b**B) * c
   """
-  def __init__(self, fa, A, fb, B, fc):
+  def __init__(self, fa, A, fb, B, fc, recording=False):
+    Gating.__init__(self, recording)
     self._fa = fa
     self._fb = fb
     self._fc = fc
@@ -464,10 +530,11 @@ class HH_aAbBc:
     self.b  = self.b0
     self.c  = self.c0
     self.Tag  = 'HH_aAbBc'
-    self.ptr = None
 
-  def _ProbOpen(self):
-    return (self.a**self.A) * (self.b**self.B) * self.c
+  def _ProbOpen(self,step):
+    p = (self.a**self.A) * (self.b**self.B) * self.c
+    if self.Recording: self.trace[step] = p
+    return p
 
   def _update_gate(self, V, dt):
     ta, fa = self._fa(V)
@@ -496,11 +563,12 @@ class HH_aAbBc:
     _plt(self._fa, self._fb, self._fc, Vi=Vm)
 
 
-class HH_aAbBcC:
+class HH_aAbBcC(Gating):
   """
   gating: (a**A) * (b**B) * (c**C)
   """
-  def __init__(self, fa, A, fb, B, fc, C):
+  def __init__(self, fa, A, fb, B, fc, C, recording=False):
+    Gating.__init__(self, recording)
     self._fa = fa
     self._fb = fb
     self._fc = fc
@@ -514,10 +582,11 @@ class HH_aAbBcC:
     self.b  = self.b0
     self.c  = self.c0
     self.Tag  = 'HH_a(A)b(B)c(C)'
-    self.ptr = None
 
-  def _ProbOpen(self):
-    return (self.a**self.A) * (self.b**self.B) * (self.c**self.C)
+  def _ProbOpen(self,step):
+    p = (self.a**self.A) * (self.b**self.B) * (self.c**self.C)
+    if self.Recording: self.trace[step] = p
+    return p
 
   def _update_gate(self, V, dt):
     ta, fa = self._fa(V)
@@ -547,11 +616,12 @@ class HH_aAbBcC:
 
 
 
-class NaChannel_MHMJ:
+class NaChannel_MHMJ(Gating):
   """
   MHMJ sodium channel
   """
-  def __init__(self, fm, fh, fi):
+  def __init__(self, fm, fh, fi, recording=False):
+    Gating.__init__(self, recording)
     self._fa = fm
     self._fb = fh
     self._fc = fi
@@ -563,8 +633,10 @@ class NaChannel_MHMJ:
     self.c0 = 0.638
     self.Tag  = 'MHMJ'
 
-  def _ProbOpen(self):
-    return (self.a**3) * self.b * self.c
+  def _ProbOpen(self,step):
+    p = (self.a**3) * self.b * self.c
+    if self.Recording: self.trace[step] = p
+    return p
 
   def _update_gate(self, V, dt):
     ta, fa = self._fa(V)
