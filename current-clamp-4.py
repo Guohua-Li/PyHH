@@ -1,44 +1,24 @@
+"""
+This tutorial demostrate the how we simulate the behivior of a neuron with three compartments.
+
+"""
+
 from compartment import Compartment
 from gating import NaT, KDR, gL
-from clampers import Alpha
 from experiment import Experiment
+from ploting import plot_Vm
 
-import matplotlib.pyplot as plt
+channels = { NaT: [0.6,  50], KDR: [0.18,-90], gL:  [0.03,-60] }
 
-def my_plot(t, v1, v2, cmd):
-    plt.figure()
-    plt.subplot(2,1,1)
-    plt.plot(t, v1)
-    plt.plot(t, v2, linewidth=2.0)
-    plt.ylim([-80,30])
-    plt.ylabel('V (mV)')
-    plt.subplot(2,1,2)
-    plt.plot(t, cmd, linewidth=2.0)
-    plt.ylim([-1,2])
-    plt.xlabel('time (ms)')
-    plt.ylabel('current (pA/um2)')
-    plt.show()
+soma = Compartment(40, None, channels)
+dend1 = Compartment(3, 60, channels, parent=soma) # soma can not be a child.
+dend2 = Compartment(3, 30, channels, parent=soma) # soma can not be a child.
 
-channels = {
-    NaT: [0.6,  50],
-    KDR: [0.18,-90],
-    gL:  [0.03,-60]
-}
+clamper = soma.add_iclamper('alpha', delay = 2, tau=0.5, amplitude=1.9)
 
-soma = Compartment(50, None, channels)
-dend = Compartment(1.5, 100, channels, parent=soma)
+xp = Experiment(soma, dend1, dend2)
 
-clamper = soma.add_iclamper()
-clamper.Waveform = Alpha(delay=2, tau=0.5, amplitude=0.9)
+xp.run(15)
+#xp.plot_Vm() # xp stores the membrane potentials of all compartments
 
-preparations = [soma,dend]
-
-xp = Experiment(preparations)
-xp.run(20)
-my_plot(xp.T, soma.Vm, dend.Vm, soma.iClamper.Command)
-
-xp.Clock = 0
-xp.run(10)
-
-my_plot(xp.T, soma.Vm, dend.Vm, soma.iClamper.Command)
-
+plot_Vm([soma], [dend1, dend2])
